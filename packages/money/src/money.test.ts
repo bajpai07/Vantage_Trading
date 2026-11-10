@@ -19,6 +19,7 @@ import {
   roundToTickUp,
   sign,
   sub,
+  toCanonicalString,
   toDbString,
 } from './index.js';
 
@@ -251,5 +252,21 @@ describe('properties (fast-check)', () => {
       }),
       { numRuns: 500 },
     );
+  });
+});
+
+describe('toCanonicalString', () => {
+  it.each([
+    ['10000', '10000.00'],
+    ['10000.0000000000', '10000.00'],
+    ['1900.4015000000', '1900.4015'],
+    ['1900.4', '1900.40'],
+    ['0', '0.00'],
+    ['-0', '0.00'],
+    ['-49.6', '-49.60'],
+    ['0.0000000001', '0.0000000001'],
+    ['899999999999999999.1234567891', '899999999999999999.1234567891'],
+  ])('%s -> %s', (input, expected) => {
+    expect(toCanonicalString(p(input))).toBe(expected);
   });
 });
