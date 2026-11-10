@@ -1,4 +1,4 @@
-import Decimal from 'decimal.js';
+import { Decimal } from 'decimal.js';
 
 // One fixed configuration for all money math. Precision 80 is far above what two numeric(28,10)
 // operands can need (a product has at most 56 digits), so add/sub/mul are exact and a division

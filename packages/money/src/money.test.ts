@@ -25,8 +25,8 @@ import {
 const p = (s: string): Dec => parse(s);
 
 // Arbitrary decimal strings built from digit strings only: no JS number ever carries a money value.
-const digits = (min: number, max: number) =>
-  fc.stringMatching(/^[0-9]*$/, { minLength: min, maxLength: max });
+const digits = (lo: number, hi: number) =>
+  fc.stringMatching(new RegExp(`^[0-9]{${String(lo)},${String(hi)}}$`));
 const intPart = fc.oneof(
   fc.constant('0'),
   fc.tuple(fc.stringMatching(/^[1-9]$/), digits(0, 17)).map(([a, b]) => a + b),
@@ -75,11 +75,12 @@ describe('parse', () => {
   });
 
   it('does not echo the rejected input in the error', () => {
-    expect(() => parse('secret-value')).toThrow(/not a plain decimal/);
     try {
       parse('secret-value');
+      expect.unreachable('parse should have thrown');
     } catch (e) {
-      expect(String((e as Error).message)).not.toContain('secret-value');
+      expect(e).toBeInstanceOf(MoneyParseError);
+      expect((e as Error).message).not.toContain('secret-value');
     }
   });
 });
@@ -106,7 +107,7 @@ describe('arithmetic is exact', () => {
   it('keeps products exact (no silent rounding)', () => {
     expect(mul(p('1234567890.1234567891'), p('2')).toString()).toBe('2469135780.2469135782');
     expect(mul(p('0.1'), p('0.1')).toString()).toBe('0.01');
-    // 28 digits x 28 digits = 56 digits, still exact
+    // (10^16 - 10^-10)^2 = 10^32 - 2*10^6 + 10^-20, which has 52 digits
     expect(mul(p('9999999999999999.9999999999'), p('9999999999999999.9999999999')).toString()).toBe(
       '99999999999999999999999998000000.00000000000000000001',
     );
