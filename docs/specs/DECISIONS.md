@@ -41,6 +41,7 @@ Format: ID · Decision · Why · Alternatives · Trade-off/risk · Status. Revis
 | D-35 | **Plain-SQL forward-only migrations via node-pg-migrate** | Full control for triggers and constraints; one wrapper, observed behaviour in docs/migrations.md | Prisma Migrate only | Hand-written SQL to maintain. Status: APPROVED by founder (M0) |
 | D-36 | **Two env files; apps never get migration credentials** | Limits the blast radius of an application compromise | One shared env file | Two files to manage. Status: APPROVED by founder (M0) |
 | D-37 | **Layout deferral**: `engine`, `market-model`, `contracts`, other apps and `apps/web` are created when needed, not in M0 | Avoids empty speculative packages | Create the full layout up front | Imports must be added when packages appear. Status: APPROVED by founder (M0) |
+| D-15 (note) | **Superseded by D-35** (plain SQL migrations via node-pg-migrate; Prisma is a client for non-ledger tables only, schema by introspection, no `prisma migrate`) | Added in M1; D-15 text above is unchanged | | Status: APPROVED by founder (M1) |
 
 ## Open assumptions to confirm (owner: founder)
 
