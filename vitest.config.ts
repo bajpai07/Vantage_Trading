@@ -7,6 +7,7 @@ const src = (p: string): string => fileURLToPath(new URL(p, import.meta.url));
 const alias = [
   { find: /^@vantage\/config\/testing$/, replacement: src('./packages/config/src/testing.ts') },
   { find: /^@vantage\/config$/, replacement: src('./packages/config/src/index.ts') },
+  { find: /^@vantage\/engine$/, replacement: src('./packages/engine/src/index.ts') },
   { find: /^@vantage\/money$/, replacement: src('./packages/money/src/index.ts') },
   { find: /^@vantage\/test-utils$/, replacement: src('./packages/test-utils/src/index.ts') },
 ];

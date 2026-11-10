@@ -42,7 +42,42 @@ export const moneyGuardRules = {
       message: 'money: performance.now is banned',
     },
   ],
-  'no-restricted-imports': ['error', { paths: ['perf_hooks', 'node:perf_hooks'] }],
+  // No IO, no clocks: only pure code may live here (money and engine).
+  'no-restricted-imports': [
+    'error',
+    {
+      paths: [
+        ...[
+          'perf_hooks',
+          'fs',
+          'fs/promises',
+          'path',
+          'crypto',
+          'http',
+          'https',
+          'http2',
+          'net',
+          'tls',
+          'dns',
+          'dgram',
+          'os',
+          'child_process',
+          'worker_threads',
+          'cluster',
+          'stream',
+          'zlib',
+          'readline',
+          'vm',
+          'timers',
+          'timers/promises',
+          'pg',
+        ].map((name) => ({ name, message: 'money/engine must stay pure: no IO or clock imports' })),
+      ],
+      patterns: [
+        { group: ['node:*', 'pg-*', '@vantage/api*'], message: 'money/engine must stay pure' },
+      ],
+    },
+  ],
 };
 
 export default tseslint.config(
