@@ -492,6 +492,7 @@ Lock order is always **account row, then order row**, to avoid deadlocks. Serial
 - Seed data: `currencies`, `exchanges`, `fee_schedules` v1 are migrations, not fixtures.
 - Backups: PITR with WAL archiving; restore tested to a scratch instance quarterly, followed by the full invariant suite.
 - Adding multi-currency cash wallets or crypto ledger currencies (P3) needs: new rows in `currencies`, new `CASH` ledger accounts per currency; **no change to existing tables**.
+- **Note (M1):** the first bullet above is superseded by D-35 (plain SQL migrations via node-pg-migrate; Prisma is a client for non-ledger tables only, schema by introspection, no `prisma migrate`).
 
 ## 13. Reconciliation queries (used by the nightly job; see TRADING_ENGINE.md §10)
 

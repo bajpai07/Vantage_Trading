@@ -8,6 +8,14 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
-    "@vantage/config": "workspace:*"
+    "@vantage/config": "workspace:*",
+    "@vantage/engine": "workspace:*",
+    "@vantage/money": "workspace:*",
+    "pg": "8.23.1"
+  },
+  "devDependencies": {
+    "@types/pg": "8.23.1",
+    "@vantage/test-utils": "workspace:*",
+    "fast-check": "4.10.2"
   }
 }
