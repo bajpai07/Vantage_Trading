@@ -30,6 +30,8 @@ export default defineConfig({
           name: 'integration',
           include: ['{apps,packages,tools}/**/*.int.test.ts'],
           exclude: ['**/node_modules/**', '**/dist/**'],
+          // Files run one after another: the cleanup test drops every t_* database, so a parallel file would lose its own.
+          fileParallelism: false,
           testTimeout: 60_000,
           hookTimeout: 60_000,
         },

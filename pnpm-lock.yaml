@@ -53,6 +53,25 @@ importers:
       '@vantage/config':
         specifier: workspace:*
         version: link:../../packages/config
+      '@vantage/engine':
+        specifier: workspace:*
+        version: link:../../packages/engine
+      '@vantage/money':
+        specifier: workspace:*
+        version: link:../../packages/money
+      pg:
+        specifier: 8.23.1
+        version: 8.23.1
+    devDependencies:
+      '@types/pg':
+        specifier: 8.23.1
+        version: 8.23.1
+      '@vantage/test-utils':
+        specifier: workspace:*
+        version: link:../../packages/test-utils
+      fast-check:
+        specifier: 4.10.2
+        version: 4.10.2
 
   packages/config:
     dependencies:
