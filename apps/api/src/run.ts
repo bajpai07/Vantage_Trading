@@ -6,9 +6,15 @@ export interface Io {
   err(line: string): void;
 }
 
-/** Returns the process exit code. 0 = config ok, 2 = invalid config, 64 = skeleton (no flag). */
-export function run(argv: readonly string[], env: Env, io: Io): number {
-  if (argv.includes('--check')) {
+/**
+ * Decides what the process does.
+ * - `--check`: validate configuration only (no network, no DB). Returns 0 (ok) or 2 (invalid).
+ * - no arguments: returns 'start' (the caller starts the server; invalid config exits 2 there).
+ * - anything else: usage error, returns 64.
+ */
+export function run(argv: readonly string[], env: Env, io: Io): number | 'start' {
+  if (argv.length === 0) return 'start';
+  if (argv.length === 1 && argv[0] === '--check') {
     try {
       loadConfig(env);
     } catch (e) {
@@ -18,6 +24,6 @@ export function run(argv: readonly string[], env: Env, io: Io): number {
     io.out(JSON.stringify({ app: 'api', status: 'config_ok' }));
     return 0;
   }
-  io.err('vantage api is a skeleton in M0: use --check to validate configuration.');
+  io.err('usage: node dist/main.js [--check]');
   return 64;
 }

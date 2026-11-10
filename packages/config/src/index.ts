@@ -13,6 +13,12 @@ export interface Config {
   readonly logLevel: LogLevel;
   readonly databaseUrl: string;
   readonly marketDataSource: MarketDataSource;
+  readonly port: number;
+  /** The single origin allowed by CORS and the CSRF check, e.g. http://localhost:3000 */
+  readonly webOrigin: string;
+  readonly sessionIdleMinutes: number;
+  readonly sessionAbsoluteDays: number;
+  readonly cookieSecure: boolean;
 }
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -79,6 +85,37 @@ const schema = z.object({
   }),
 });
 
+function isOrigin(v: string): boolean {
+  try {
+    const u = new URL(v);
+    return (u.protocol === 'http:' || u.protocol === 'https:') && u.origin === v;
+  } catch {
+    return false;
+  }
+}
+
+const intInRange = (lo: number, hi: number, what: string) =>
+  z
+    .string({ error: 'is required' })
+    .regex(/^[0-9]{1,9}$/, {
+      error: `must be an integer from ${String(lo)} to ${String(hi)} (${what})`,
+    })
+    .transform((v) => parseInt(v, 10))
+    .refine((n) => n >= lo && n <= hi, {
+      error: `must be an integer from ${String(lo)} to ${String(hi)} (${what})`,
+    });
+
+const appSchema = z.object({
+  PORT: intInRange(1, 65535, 'TCP port'),
+  WEB_ORIGIN: z.string({ error: 'is required' }).refine(isOrigin, {
+    error:
+      'must be a single http(s) origin such as http://localhost:3000 (no path, no trailing slash)',
+  }),
+  SESSION_IDLE_MINUTES: intInRange(1, 10080, 'minutes'),
+  SESSION_ABSOLUTE_DAYS: intInRange(1, 90, 'days'),
+  COOKIE_SECURE: z.enum(['true', 'false'], { error: 'must be true or false' }),
+});
+
 function dbUser(url: string): string | undefined {
   try {
     return decodeURIComponent(new URL(url).username);
@@ -90,6 +127,26 @@ function dbUser(url: string): string | undefined {
 /** Pure: reads only the `env` argument, never process.env. */
 export function loadConfig(env: Env): Config {
   const issues: ConfigIssue[] = [];
+
+  const app = appSchema.safeParse({
+    PORT: env.PORT ?? '3000',
+    WEB_ORIGIN: env.WEB_ORIGIN,
+    SESSION_IDLE_MINUTES: env.SESSION_IDLE_MINUTES ?? '480',
+    SESSION_ABSOLUTE_DAYS: env.SESSION_ABSOLUTE_DAYS ?? '7',
+    COOKIE_SECURE: env.COOKIE_SECURE ?? 'true',
+  });
+  if (!app.success) {
+    for (const i of app.error.issues) {
+      issues.push({ name: String(i.path[0] ?? 'env'), rule: i.message });
+    }
+  }
+  // COOKIE_SECURE=false is only allowed for local and test (cookies must be Secure elsewhere).
+  if (env.COOKIE_SECURE === 'false' && env.APP_ENV !== 'local' && env.APP_ENV !== 'test') {
+    issues.push({
+      name: 'COOKIE_SECURE',
+      rule: 'false is only allowed when APP_ENV is local or test',
+    });
+  }
 
   const parsed = schema.safeParse({
     APP_ENV: env.APP_ENV,
@@ -131,12 +188,17 @@ export function loadConfig(env: Env): Config {
     });
   }
 
-  if (!parsed.success || issues.length > 0) throw new ConfigError(issues);
+  if (!parsed.success || !app.success || issues.length > 0) throw new ConfigError(issues);
   return {
     appEnv: parsed.data.APP_ENV,
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,
     marketDataSource: parsed.data.MARKET_DATA_SOURCE,
+    port: app.data.PORT,
+    webOrigin: app.data.WEB_ORIGIN,
+    sessionIdleMinutes: app.data.SESSION_IDLE_MINUTES,
+    sessionAbsoluteDays: app.data.SESSION_ABSOLUTE_DAYS,
+    cookieSecure: app.data.COOKIE_SECURE === 'true',
   };
 }
 

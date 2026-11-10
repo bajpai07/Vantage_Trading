@@ -5,12 +5,16 @@
     "outDir": "dist",
     "noEmit": true,
     "composite": false,
-    "declaration": false
+    "declaration": false,
+    "experimentalDecorators": true
   },
   "include": ["src"],
   "references": [
     {
       "path": "../../packages/config/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/contracts/tsconfig.build.json"
     },
     {
       "path": "../../packages/money/tsconfig.build.json"

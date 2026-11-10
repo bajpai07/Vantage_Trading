@@ -34,7 +34,11 @@ describe('loadConfig', () => {
       const e = fail(buildTestEnv({ APP_ENV: appEnv, MARKET_DATA_SOURCE: 'FIXTURE' }));
       expect(e.issues).toContainEqual(expect.objectContaining({ name: 'MARKET_DATA_SOURCE' }));
     }
-    const prod = buildTestEnv({ APP_ENV: 'production', MARKET_DATA_SOURCE: 'PROVIDER' });
+    const prod = buildTestEnv({
+      APP_ENV: 'production',
+      MARKET_DATA_SOURCE: 'PROVIDER',
+      COOKIE_SECURE: 'true',
+    });
     expect(loadConfig(prod).marketDataSource).toBe('PROVIDER');
     expect(loadConfig(buildTestEnv({ APP_ENV: 'local' })).appEnv).toBe('local');
   });
@@ -101,5 +105,78 @@ describe('redactUrl', () => {
   it('hides the password', () => {
     expect(redactUrl('postgres://u:hunter2@h:1/d')).not.toContain('hunter2');
     expect(redactUrl('postgres://u@h:1/d')).toContain('u@h');
+  });
+});
+
+describe('M2 application settings', () => {
+  it('applies defaults (control): port 3000, idle 480 min, absolute 7 days, secure cookies', () => {
+    const c = loadConfig(buildTestEnv({ COOKIE_SECURE: undefined, APP_ENV: 'local' }));
+    expect(c.port).toBe(3000);
+    expect(c.sessionIdleMinutes).toBe(480);
+    expect(c.sessionAbsoluteDays).toBe(7);
+    expect(c.cookieSecure).toBe(true);
+    expect(c.webOrigin).toBe('http://localhost:3000');
+  });
+
+  it('reads explicit values', () => {
+    const c = loadConfig(
+      buildTestEnv({
+        PORT: '8080',
+        SESSION_IDLE_MINUTES: '30',
+        SESSION_ABSOLUTE_DAYS: '1',
+        COOKIE_SECURE: 'false',
+      }),
+    );
+    expect([c.port, c.sessionIdleMinutes, c.sessionAbsoluteDays, c.cookieSecure]).toEqual([
+      8080,
+      30,
+      1,
+      false,
+    ]);
+  });
+
+  it.each([
+    ['PORT', 'abc'],
+    ['PORT', '0'],
+    ['PORT', '70000'],
+    ['WEB_ORIGIN', 'http://localhost:3000/'],
+    ['WEB_ORIGIN', 'http://localhost:3000/app'],
+    ['WEB_ORIGIN', 'ftp://localhost'],
+    ['WEB_ORIGIN', 'not a url'],
+    ['SESSION_IDLE_MINUTES', '0'],
+    ['SESSION_ABSOLUTE_DAYS', '91'],
+    ['COOKIE_SECURE', 'yes'],
+  ])('rejects %s=%s by name and rule, without echoing the value', (name, value) => {
+    const e = fail(buildTestEnv({ [name]: value }));
+    expect(e.issues.map((i) => i.name)).toContain(name);
+    expect(e.message).not.toContain(value === '0' ? 'zzz' : value);
+  });
+
+  it('WEB_ORIGIN is required', () => {
+    expect(fail(buildTestEnv({ WEB_ORIGIN: undefined })).issues.map((i) => i.name)).toContain(
+      'WEB_ORIGIN',
+    );
+  });
+
+  it('COOKIE_SECURE=false is refused in staging and production, allowed in local and test (control)', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const e = fail(
+        buildTestEnv({ APP_ENV: appEnv, MARKET_DATA_SOURCE: 'PROVIDER', COOKIE_SECURE: 'false' }),
+      );
+      expect(e.issues).toContainEqual(expect.objectContaining({ name: 'COOKIE_SECURE' }));
+    }
+    for (const appEnv of ['local', 'test']) {
+      expect(
+        loadConfig(buildTestEnv({ APP_ENV: appEnv, COOKIE_SECURE: 'false' })).cookieSecure,
+      ).toBe(false);
+    }
+    const prod = loadConfig(
+      buildTestEnv({
+        APP_ENV: 'production',
+        MARKET_DATA_SOURCE: 'PROVIDER',
+        COOKIE_SECURE: 'true',
+      }),
+    );
+    expect(prod.cookieSecure).toBe(true);
   });
 });
