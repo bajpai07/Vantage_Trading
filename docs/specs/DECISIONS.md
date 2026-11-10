@@ -32,6 +32,15 @@ Format: ID · Decision · Why · Alternatives · Trade-off/risk · Status. Revis
 | D-26 | **Feature gating by `instruments.tradable_in` and `provider_feeds` config with licence refs** | Phased market launch without code forks | Separate branches | Config must be audited (CI test) |
 | D-27 | **Nightly reconciliation freezes accounts on violation** | Prevents compounding corruption | Alert only | A bug could freeze many accounts; alert-first thresholds and an admin unfreeze flow |
 | D-28 | **Mobile = responsive web (reorganised panels) in MVP; PWA in P2** | Solo capacity | Native apps | Less native polish |
+| D-29 | **One-process modular monolith first** | Smallest moving parts for a solo build; module boundaries keep later extraction possible | Four processes from day one | Needs boundary discipline. Status: APPROVED by founder (M0) |
+| D-30 | **Synchronous market-order execution**: one atomic transaction, account-level locking, idempotency and full validation (mandatory) | Simple, correct and testable; no half-filled states for market orders | Queue plus execution worker from day one | Hot-account contention bounded by account-level locking. Status: APPROVED by founder (M0) |
+| D-31 | **Multi-currency schema, but USD-only balances and trading in the first MVP** | Avoids a schema change when INR arrives (see D-04) | USD-only schema | Extra columns unused at first. Status: APPROVED by founder (M0) |
+| D-32 | **ETFs use the same pipeline as stocks** | No special cases; same instrument model | Separate ETF handling | ETF-specific data gaps are handled later. Status: APPROVED by founder (M0) |
+| D-33 | **Whole shares in the MVP** (TRADING_ENGINE §1: fractional off, flag-controlled later; the instrument has `fractional_ok`) | Simpler rounding and lot logic | Fractional shares at launch | Less flexible position sizing. Status: APPROVED by founder (M0) |
+| D-34 | **Stack unchanged**: NestJS, Prisma for non-ledger tables, raw SQL for the ledger, Next.js (see D-15, D-16) | Already decided; M0 adds none of it | Revisit the stack now | None new. Status: APPROVED by founder (M0) |
+| D-35 | **Plain-SQL forward-only migrations via node-pg-migrate** | Full control for triggers and constraints; one wrapper, observed behaviour in docs/migrations.md | Prisma Migrate only | Hand-written SQL to maintain. Status: APPROVED by founder (M0) |
+| D-36 | **Two env files; apps never get migration credentials** | Limits the blast radius of an application compromise | One shared env file | Two files to manage. Status: APPROVED by founder (M0) |
+| D-37 | **Layout deferral**: `engine`, `market-model`, `contracts`, other apps and `apps/web` are created when needed, not in M0 | Avoids empty speculative packages | Create the full layout up front | Imports must be added when packages appear. Status: APPROVED by founder (M0) |
 
 ## Open assumptions to confirm (owner: founder)
 

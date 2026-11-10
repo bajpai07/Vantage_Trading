@@ -1,0 +1,40 @@
+{
+  "name": "vantage",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@10.28.2",
+  "engines": {
+    "node": "22.19.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck && tsc -p tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "test:unit": "vitest run --project unit",
+    "test:integration": "vitest run --project integration",
+    "setup:env": "tsx tools/setup-env.ts",
+    "db:up": "docker compose -p vantage --env-file .env.infra -f infra/docker-compose.yml up -d --wait",
+    "db:down": "docker compose -p vantage --env-file .env.infra -f infra/docker-compose.yml down",
+    "db:reset": "echo NOTE: init scripts only run on an empty volume, so this deletes the vantage database volume && docker compose -p vantage --env-file .env.infra -f infra/docker-compose.yml down -v && pnpm db:up",
+    "db:migrate": "node --env-file=.env.infra tools/migrate.mjs up",
+    "db:status": "node --env-file=.env.infra tools/migrate.mjs status",
+    "test:cleanup": "tsx tools/cleanup-test-dbs.ts",
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration"
+  },
+  "devDependencies": {
+    "@eslint/js": "10.0.1",
+    "@types/node": "22.19.0",
+    "@types/pg": "8.23.1",
+    "eslint": "10.14.0",
+    "globals": "17.14.0",
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1",
+    "prettier": "3.9.10",
+    "tsx": "4.23.15",
+    "turbo": "2.11.10",
+    "typescript": "6.0.3",
+    "typescript-eslint": "8.72.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,27 @@
+# Always run with: docker compose --env-file .env.infra -f infra/docker-compose.yml ... (see the db:* scripts).
+name: vantage
+
+services:
+  postgres:
+    image: postgres:16.15
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?run pnpm setup:env}
+      VANTAGE_MIGRATOR_PASSWORD: ${VANTAGE_MIGRATOR_PASSWORD:?run pnpm setup:env}
+      VANTAGE_APP_PASSWORD: ${VANTAGE_APP_PASSWORD:?run pnpm setup:env}
+    ports:
+      - '127.0.0.1:${POSTGRES_HOST_PORT:?run pnpm setup:env}:5432'
+    volumes:
+      - vantage_pgdata:/var/lib/postgresql/data
+      - ./postgres/01-bootstrap.sh:/docker-entrypoint-initdb.d/01-bootstrap.sh:ro
+    healthcheck:
+      # TCP on purpose: during init the temporary server only listens on the unix socket.
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d vantage_dev']
+      interval: 3s
+      timeout: 3s
+      retries: 20
+      start_period: 5s
+
+volumes:
+  vantage_pgdata:
