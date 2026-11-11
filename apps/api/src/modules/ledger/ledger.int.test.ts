@@ -42,12 +42,23 @@ async function inTx<T>(pool: Pool, fn: (c: PoolClient) => Promise<T>): Promise<T
   }
 }
 
+/** M2: accounts.user_id now references users, so tests create a real (password-less placeholder) user. */
+async function insertUser(c: Pick<PoolClient, 'query'>): Promise<string> {
+  const id = randomUUID();
+  await c.query(
+    `INSERT INTO users (id, email, password_hash, role, status, display_name, country_code, is_adult)
+     VALUES ($1::uuid, $2, 'not-a-real-hash', 'USER', 'ACTIVE', 'Test User', 'US', true)`,
+    [id, `${id}@test.invalid`],
+  );
+  return id;
+}
+
 async function newGrantedAccount(pool: Pool = db.app, capital = '10000'): Promise<string> {
   const accountId = randomUUID();
   await inTx(pool, async (c) => {
     await createAccount(c, {
       accountId,
-      userId: randomUUID(),
+      userId: await insertUser(c),
       kind: 'MAIN',
       initialCapital: capital,
     });
@@ -120,8 +131,13 @@ describe('1. grant', () => {
 
   it('reconcile flags an account that was never granted (must fail), and is clean once granted (control)', async () => {
     const accountId = randomUUID();
-    await inTx(db.app, (c) =>
-      createAccount(c, { accountId, userId: randomUUID(), kind: 'MAIN', initialCapital: '10000' }),
+    await inTx(db.app, async (c) =>
+      createAccount(c, {
+        accountId,
+        userId: await insertUser(c),
+        kind: 'MAIN',
+        initialCapital: '10000',
+      }),
     );
     const v = await reconcileAccount(db.app, accountId);
     expect(v.map((x) => x.invariant)).toContain('I10');
@@ -401,6 +417,10 @@ describe('5. no direct balance edits', () => {
       `SELECT id FROM ledger_accounts WHERE account_id = $1::uuid AND type = 'CASH'`,
       [id],
     );
+    const capital = await db.app.query<{ id: string }>(
+      `SELECT id FROM ledger_accounts WHERE account_id = $1::uuid AND type = 'CAPITAL'`,
+      [id],
+    );
     const txId = randomUUID();
     await inTx(db.app, async (c) => {
       await c.query(
@@ -418,8 +438,14 @@ describe('5. no direct balance edits', () => {
         '23514',
       );
       await c.query('ROLLBACK TO SAVEPOINT s');
-      // nothing else in this transaction: it has no entries, so it commits as an empty (balanced) one
+      // control: a non-zero balanced pair in the same transaction is accepted and commits
+      await c.query(
+        `INSERT INTO ledger_entries (transaction_id, ledger_account_id, currency, amount, amount_usd)
+         VALUES ($1::uuid, $2::uuid, 'USD', 1, 1), ($1::uuid, $3::uuid, 'USD', -1, -1)`,
+        [txId, cash.rows[0]?.id, capital.rows[0]?.id],
+      );
     });
+    expect((await balances(id))['CASH_USD']).toBe('10001.0000000000');
   });
 
   it('a new ledger account must start at balance 0 (control: 0 is accepted)', async () => {
@@ -727,5 +753,68 @@ describe('9. numeric fidelity', () => {
     const id = await newGrantedAccount(db.app, '12345678.12345678');
     expect((await balances(id))['CASH_USD']).toBe('12345678.1234567800');
     expect(grantLegs({ amount: '12345678.12345678' })[0]?.amount).toBe('12345678.12345678');
+  });
+});
+
+// ---- 10. M2 schema hardening (migrations 0007 and 0008) ------------------------------------------
+
+describe('10. transactions must have entries; accounts need a real user', () => {
+  it('a transaction with zero entries is rejected at commit (must fail)', async () => {
+    const id = await newGrantedAccount();
+    const c = await db.app.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(
+        `INSERT INTO ledger_transactions (id, account_id, kind, idempotency_key)
+         VALUES ($1::uuid, $2::uuid, 'ADJUSTMENT', 'empty-1')`,
+        [randomUUID(), id],
+      );
+      await expectPgError(c.query('COMMIT'), undefined, /has no entries/);
+    } finally {
+      await c.query('ROLLBACK').catch(() => undefined);
+      c.release();
+    }
+    const left = await db.app.query(
+      `SELECT 1 FROM ledger_transactions WHERE account_id = $1::uuid AND idempotency_key = 'empty-1'`,
+      [id],
+    );
+    expect(left.rowCount).toBe(0);
+  });
+
+  it('normal posting is unaffected (control) and an idempotent replay still works', async () => {
+    const id = await newGrantedAccount();
+    const legs = buyFillLegs({ qty: '1', price: '100', fee: '0' });
+    const first = await post(id, 'ok-1', legs);
+    const again = await post(id, 'ok-1', legs);
+    expect(again).toEqual({ transactionId: first.transactionId, created: false });
+    expect((await balances(id))['CASH_USD']).toBe('9900.0000000000');
+  });
+
+  it('an account for a user that does not exist is rejected (control: an existing user works)', async () => {
+    await expectPgError(
+      inTx(db.app, (c) =>
+        createAccount(c, {
+          accountId: randomUUID(),
+          userId: randomUUID(),
+          kind: 'MAIN',
+          initialCapital: '10000',
+        }),
+      ),
+      '23503',
+    );
+    await newGrantedAccount();
+  });
+
+  it('an email with leading or trailing whitespace is rejected, and uniqueness is case-insensitive', async () => {
+    const insert = (email: string) =>
+      db.app.query(
+        `INSERT INTO users (id, email, password_hash, display_name, is_adult)
+         VALUES ($1::uuid, $2, 'x', 'Test User', true)`,
+        [randomUUID(), email],
+      );
+    await expectPgError(insert(' lead@example.com'), '23514');
+    await expectPgError(insert('trail@example.com\t'), '23514');
+    await insert('Case@Example.com'); // control
+    await expectPgError(insert('case@example.COM'), '23505');
   });
 });

@@ -89,6 +89,34 @@ export default tseslint.config(
     rules: { '@typescript-eslint/consistent-type-imports': 'error' },
   },
   {
+    // The API logs through log.ts only (no console), so nothing can print a request body by accident.
+    files: ['apps/api/src/**/*.ts'],
+    rules: { 'no-console': 'error' },
+  },
+  {
+    // Module boundaries: a module reaches the ledger only through LedgerService, never its repository files.
+    files: ['apps/api/src/modules/{auth,users,accounts,audit,health,db,config}/**/*.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: [
+                '**/ledger/repository*',
+                '**/ledger/reconcile*',
+                '**/ledger/errors*',
+                '**/ledger/index*',
+              ],
+              message:
+                'import LedgerService from ledger.service.js instead of reaching into the repository',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/money/src/**/*.ts', 'packages/engine/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: moneyGuardRules,

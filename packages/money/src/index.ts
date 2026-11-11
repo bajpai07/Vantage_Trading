@@ -107,6 +107,16 @@ export class Dec {
     const text = this.#d.toFixed(scale);
     return this.#d.isZero() ? this.#d.abs().toFixed(scale) : text;
   }
+  /**
+   * Canonical API text: at least 2 decimal places, trailing zeros beyond the 2nd trimmed
+   * ("10000.00", "1900.4015"). Display rounding is a UI concern; this never rounds.
+   */
+  toCanonicalString(): string {
+    const text = this.toString();
+    const dot = text.indexOf('.');
+    if (dot === -1) return `${text}.00`;
+    return text.length - dot - 1 === 1 ? `${text}0` : text;
+  }
   /** A plain fixed-point string for a Postgres `numeric` parameter. */
   toDbString(): string {
     return this.toString();
@@ -126,6 +136,7 @@ export const negate = (a: Dec): Dec => a.negate();
 export const isZero = (a: Dec): boolean => a.isZero();
 export const sign = (a: Dec): -1 | 0 | 1 => a.sign();
 export const toDbString = (a: Dec): string => a.toDbString();
+export const toCanonicalString = (a: Dec): string => a.toCanonicalString();
 
 /** 8 decimal places, HALF_EVEN (TRADING_ENGINE section 9). */
 export const round8 = (a: Dec): Dec => a.round(8, 'HALF_EVEN');

@@ -274,6 +274,8 @@ CREATE CONSTRAINT TRIGGER ledger_tx_balanced AFTER INSERT ON ledger_entries
 
 Because the `CHECK (balance >= 0)` lives on `ledger_accounts`, a concurrent overspend fails at the database even if application logic has a bug. The engine additionally takes `SELECT ... FOR UPDATE` on the CASH ledger account for deterministic ordering and clean error messages.
 
+- **Note (M2, D-44a):** `apply_entry` also requires an entry's `currency` to equal its ledger account's currency (otherwise it raises), and, per D-44b, every `ledger_transactions` row must have at least one `ledger_entries` row at commit (constraint trigger `ledger_tx_has_entries`).
+
 ## 7. Orders, executions, positions
 
 ```sql

@@ -10,6 +10,8 @@ export function buildTestEnv(overrides: Record<string, string | undefined> = {})
     LOG_LEVEL: 'info',
     DATABASE_URL: 'postgres://vantage_app@127.0.0.1:5432/vantage_test',
     MARKET_DATA_SOURCE: 'FIXTURE',
+    WEB_ORIGIN: 'http://localhost:3000',
+    COOKIE_SECURE: 'false',
   };
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries({ ...base, ...overrides })) {
