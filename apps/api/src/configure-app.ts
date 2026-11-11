@@ -36,7 +36,7 @@ export function configureApp(app: NestExpressApplication, config: Config, logger
   app.enableCors({
     origin: config.webOrigin,
     credentials: true,
-    methods: ['GET', 'POST', 'OPTIONS'],
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['content-type', 'x-request-id'],
   });
 

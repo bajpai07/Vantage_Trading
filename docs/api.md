@@ -81,3 +81,42 @@ Exceeding a limit returns `429` with `Retry-After`. **Limitations:** counters li
 ## Running locally
 
 See the README quickstart: `node --env-file=.env apps/api/dist/main.js` after `pnpm build`. `--check` validates the configuration only (exit 0 ok, 2 invalid, 64 usage error).
+
+## Instruments, quotes, market status and watchlists (M3a)
+
+All of these need a valid session. Prices are canonical decimal strings. **A quote is never a bare price:** every quote item carries `source` and `freshness`. In local and test the source is `FIXTURE` (synthetic data); see [market-data.md](market-data.md).
+
+| Method and path                           | Success                   | Notes                                                                                                                                   |
+| ----------------------------------------- | ------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /v1/instruments/search?q=`           | `200 { results }`         | `q` 1 to 40 characters after trimming, at most 20 results. Exact symbol first, then prefix, then typo-tolerant trigram similarity.      |
+| `GET /v1/instruments/:symbol`             | `200` instrument          | `404 INSTRUMENT_NOT_FOUND`; `400` for a malformed symbol.                                                                               |
+| `GET /v1/quotes?symbols=A,B`              | `200 { quotes }`          | 1 to 50 symbols, upper-cased and de-duplicated, one item per symbol in request order. Unknown symbols are reported with `known: false`. |
+| `GET /v1/market/status`                   | `200 { asOf, exchanges }` | Per exchange: `state` OPEN or CLOSED, `session`, `reason`, holiday `note`, `nextOpen`, `nextClose`.                                     |
+| `GET /v1/watchlists`                      | `200 { watchlists }`      | The caller's lists with their items (symbols only; ask `/v1/quotes` for prices).                                                        |
+| `POST /v1/watchlists`                     | `201` watchlist           | `{ name }`, 1 to 40 characters, unique per user (`409 WATCHLIST_NAME_TAKEN`); at most 20 lists (`409 WATCHLIST_LIMIT`).                 |
+| `PATCH /v1/watchlists/:id`                | `200` watchlist           | `{ name? , position? }` (at least one): rename or reorder lists.                                                                        |
+| `DELETE /v1/watchlists/:id`               | `204`                     | Deletes the list and its items.                                                                                                         |
+| `POST /v1/watchlists/:id/items`           | `201` or `200`            | `{ symbol }`. **201** when added, **200** when it was already there (idempotent). At most 100 items (`409 WATCHLIST_FULL`).             |
+| `PUT /v1/watchlists/:id/items/order`      | `200` watchlist           | `{ symbols }` must be exactly the current symbols in the new order (`400 ORDER_MISMATCH`).                                              |
+| `DELETE /v1/watchlists/:id/items/:symbol` | `204`                     | Idempotent: removing a symbol that is not in the list is also `204`.                                                                    |
+
+A user can only see and change their own lists. Another user's list, an unknown list and a malformed list id all return `404 WATCHLIST_NOT_FOUND` (never 403). The CSRF Origin rule applies to every POST, PUT, PATCH and DELETE.
+
+### Instrument item
+
+`symbol`, `name`, `assetClass`, `exchange` (MIC, e.g. `XNAS`), `currency`, `status`, `tickSize`, `entitlement` (`REAL_TIME` or `DELAYED`), `delaySeconds`, `source` (e.g. `FIXTURE`).
+
+### Quote item
+
+`symbol`, `known`, `freshness` (`REAL_TIME`, `DELAYED`, `STALE`, `CLOSED`, `UNAVAILABLE`), `source`, `entitlement`, `delaySeconds`, `ageSeconds`, `asOf` (provider timestamp), and, **unless the freshness is `UNAVAILABLE`**, `bid`, `ask` and `last` (canonical strings). An `UNAVAILABLE` item has no price fields at all. `gapConfirmed: true` marks a price that jumped more than 10% and was confirmed by a second tick. `CLOSED` means the market is closed and the price is the last close.
+
+### New error codes
+
+| HTTP | code                   | When                                                  |
+| ---- | ---------------------- | ----------------------------------------------------- |
+| 404  | `INSTRUMENT_NOT_FOUND` | Unknown symbol (instrument or watchlist item).        |
+| 404  | `WATCHLIST_NOT_FOUND`  | Unknown list, another user's list, malformed list id. |
+| 409  | `WATCHLIST_NAME_TAKEN` | The user already has a list with that name.           |
+| 409  | `WATCHLIST_LIMIT`      | 20 lists per user.                                    |
+| 409  | `WATCHLIST_FULL`       | 100 items per list.                                   |
+| 400  | `ORDER_MISMATCH`       | Item reorder does not list exactly the current items. |

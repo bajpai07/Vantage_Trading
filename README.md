@@ -46,6 +46,10 @@ The default host port is **55432**, set by `POSTGRES_HOST_PORT` in `.env.infra.e
 
 Neither is committed. Only `.env.example` and `.env.infra.example` are tracked. File mode 0600 is applied where the file system supports it (not on Windows).
 
+## Local and test quotes are FIXTURE data
+
+Until a real data vendor is connected (M3b), every quote, instrument price and market snapshot in `local` and `test` is **synthetic FIXTURE data**: real company names with obviously fake prices (multiples of 11.11), labelled `source: "FIXTURE"` in the database, the API and the logs. It is never real market data. The app refuses to start in staging or production if fixture data is present, and `MARKET_DATA_SOURCE=PROVIDER` exits with "no provider adapter installed; M3b". See [docs/market-data.md](docs/market-data.md).
+
 ## Layout
 
 ```
@@ -53,6 +57,7 @@ apps/api/                 NestJS API (auth, account, ledger, health); `--check` 
 packages/config/          Zod config and guards
 packages/contracts/       Zod request/response schemas shared with the web app
 packages/engine/          pure posting recipes (no IO)
+packages/market-model/    pure freshness, quote validation and exchange calendars
 packages/money/           empty skeleton (logic in M1) with lint rules that ban float-style code
 packages/test-utils/      database test helper
 db/migrations/            plain forward-only .sql files

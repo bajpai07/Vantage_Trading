@@ -22,11 +22,13 @@ export interface Harness {
   readonly config: Config;
   /** Captured log lines (JSON strings). */
   readonly logs: string[];
-  readonly clock: { now(): Date; advance(ms: number): void };
+  readonly clock: { now(): Date; advance(ms: number): void; set(iso: string): void };
   close(): Promise<void>;
 }
 
 export interface HarnessOptions {
+  /** Initial value of the injected clock (ISO). Default 2026-11-10T12:00:00Z. */
+  readonly now?: string;
   readonly env?: Record<string, string | undefined>;
   /** token -> replacement value (useValue). */
   readonly overrides?: ReadonlyArray<readonly [unknown, unknown]>;
@@ -44,11 +46,14 @@ export async function createHarness(db: TestDatabase, opts: HarnessOptions = {})
   );
   const logs: string[] = [];
   const logger = createLogger('debug', (line) => logs.push(line));
-  let t = Date.parse('2026-11-10T12:00:00.000Z');
-  const clock: Clock & { advance(ms: number): void } = {
+  let t = Date.parse(opts.now ?? '2026-11-10T12:00:00.000Z');
+  const clock: Clock & { advance(ms: number): void; set(iso: string): void } = {
     now: () => new Date(t),
     advance: (ms) => {
       t += ms;
+    },
+    set: (iso) => {
+      t = Date.parse(iso);
     },
   };
 
@@ -65,7 +70,12 @@ export async function createHarness(db: TestDatabase, opts: HarnessOptions = {})
   const moduleRef = await builder.compile();
   const app = moduleRef.createNestApplication<NestExpressApplication>();
   configureApp(app, config, logger);
-  await app.init();
+  try {
+    await app.init();
+  } catch (e) {
+    await app.close().catch(() => undefined); // do not leak the pool when startup is refused
+    throw e;
+  }
 
   return {
     app,
@@ -100,3 +110,25 @@ export function sessionTokenFrom(setCookie: string[] | string | undefined): stri
   }
   return undefined;
 }
+
+/** Registers a user through the API and returns the session token. */
+export async function registerUser(harness: Harness, email: string): Promise<string> {
+  const res = await harness.http
+    .post('/v1/auth/register')
+    .set('Origin', WEB_ORIGIN)
+    .send(registerBody(email));
+  if (res.status !== 201) throw new Error(`registration failed with ${String(res.status)}`);
+  return sessionTokenFrom(res.headers['set-cookie']) ?? '';
+}
+
+/** Logs an existing user in at the harness clock's current time (new session) and returns the token. */
+export async function loginUser(harness: Harness, email: string): Promise<string> {
+  const res = await harness.http
+    .post('/v1/auth/login')
+    .set('Origin', WEB_ORIGIN)
+    .send({ email, password: VALID_PASSWORD });
+  if (res.status !== 200) throw new Error(`login failed with ${String(res.status)}`);
+  return sessionTokenFrom(res.headers['set-cookie']) ?? '';
+}
+
+export const cookie = (token: string): string => `vantage_session=${token}`;

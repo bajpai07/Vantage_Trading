@@ -20,7 +20,8 @@
     "db:migrate": "node --env-file=.env.infra tools/migrate.mjs up",
     "db:status": "node --env-file=.env.infra tools/migrate.mjs status",
     "test:cleanup": "tsx tools/cleanup-test-dbs.ts",
-    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration"
+    "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration",
+    "bench:search": "tsx tools/bench-search.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

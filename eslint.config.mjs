@@ -80,6 +80,30 @@ export const moneyGuardRules = {
   ],
 };
 
+// Determinism guard for time-handling pure code (market-model): the same bans as the money guard (no
+// clock, no randomness, no IO, no float literals, no parseFloat), except that integer parsing with
+// parseInt(x, 10) and the integer-safe Math members floor/trunc/abs/min/max are allowed, because calendar
+// code must read and divide integers. Prices are never parsed here: they are strings handled by @vantage/money.
+const RELAXED_FOR_TIME = new Set([
+  "CallExpression[callee.name='parseInt']",
+  "MemberExpression[object.name='Math']",
+]);
+export const determinismGuardRules = {
+  'no-restricted-syntax': [
+    'error',
+    ...moneyGuardRules['no-restricted-syntax']
+      .slice(1)
+      .filter((r) => !RELAXED_FOR_TIME.has(r.selector)),
+    {
+      selector:
+        "MemberExpression[object.name='Math'][property.name=/^(?!(floor|trunc|abs|min|max)$)/]",
+      message:
+        'market-model: only Math.floor/trunc/abs/min/max are allowed (no Math.random, no float math)',
+    },
+  ],
+  'no-restricted-imports': moneyGuardRules['no-restricted-imports'],
+};
+
 export default tseslint.config(
   { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.turbo/**', 'docs/**'] },
   js.configs.recommended,
@@ -120,5 +144,10 @@ export default tseslint.config(
     files: ['packages/money/src/**/*.ts', 'packages/engine/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: moneyGuardRules,
+  },
+  {
+    files: ['packages/market-model/src/**/*.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: determinismGuardRules,
   },
 );

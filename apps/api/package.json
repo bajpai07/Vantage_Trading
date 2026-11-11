@@ -15,6 +15,7 @@
     "@vantage/config": "workspace:*",
     "@vantage/contracts": "workspace:*",
     "@vantage/engine": "workspace:*",
+    "@vantage/market-model": "workspace:*",
     "@vantage/money": "workspace:*",
     "pg": "8.23.1",
     "reflect-metadata": "0.2.2",
