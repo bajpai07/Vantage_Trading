@@ -9,6 +9,10 @@ const alias = [
   { find: /^@vantage\/config$/, replacement: src('./packages/config/src/index.ts') },
   { find: /^@vantage\/contracts$/, replacement: src('./packages/contracts/src/index.ts') },
   { find: /^@vantage\/engine$/, replacement: src('./packages/engine/src/index.ts') },
+  {
+    find: /^@vantage\/market-model$/,
+    replacement: src('./packages/market-model/src/index.ts'),
+  },
   { find: /^@vantage\/money$/, replacement: src('./packages/money/src/index.ts') },
   { find: /^@vantage\/test-utils$/, replacement: src('./packages/test-utils/src/index.ts') },
 ];
