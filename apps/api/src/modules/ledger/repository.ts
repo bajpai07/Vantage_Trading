@@ -82,6 +82,9 @@ export interface PostTransactionInput {
   readonly kind: LedgerTxKind;
   readonly idempotencyKey: string;
   readonly description?: string;
+  /** Optional links recorded on the transaction (no foreign keys: ledger rows are immutable). */
+  readonly orderId?: string;
+  readonly executionId?: string;
   readonly legs: readonly PostLeg[];
 }
 
@@ -148,11 +151,19 @@ export async function postTransaction(
   try {
     const transactionId = randomUUID();
     const inserted = await client.query<{ id: string }>(
-      `INSERT INTO ledger_transactions (id, account_id, kind, idempotency_key, description)
-       VALUES ($1::uuid, $2::uuid, $3::ledger_tx_kind, $4, $5)
+      `INSERT INTO ledger_transactions (id, account_id, kind, idempotency_key, description, order_id, execution_id)
+       VALUES ($1::uuid, $2::uuid, $3::ledger_tx_kind, $4, $5, $6::uuid, $7::uuid)
        ON CONFLICT (account_id, idempotency_key) DO NOTHING
        RETURNING id`,
-      [transactionId, input.accountId, input.kind, input.idempotencyKey, input.description ?? null],
+      [
+        transactionId,
+        input.accountId,
+        input.kind,
+        input.idempotencyKey,
+        input.description ?? null,
+        input.orderId ?? null,
+        input.executionId ?? null,
+      ],
     );
 
     if (inserted.rowCount === 0) {

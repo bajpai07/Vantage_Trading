@@ -2,13 +2,15 @@
 // TRADING_ENGINE section 11). An empty result means the account is clean.
 import { negate, parse } from '@vantage/money';
 import type { Queryable } from './repository.js';
+import { reconcileTrading } from './reconcile-trading.js';
 
 export interface Violation {
-  readonly invariant: 'I1' | 'I2' | 'I3' | 'I10';
+  readonly invariant:
+    'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I10' | 'POSITION_COST' | 'REALIZED_PNL';
   readonly message: string;
 }
 
-export async function reconcileAccount(client: Queryable, accountId: string): Promise<Violation[]> {
+async function reconcileLedger(client: Queryable, accountId: string): Promise<Violation[]> {
   const out: Violation[] = [];
 
   // I1: every ledger transaction balances to zero per currency.
@@ -114,5 +116,25 @@ export async function reconcileAccount(client: Queryable, accountId: string): Pr
       message: `CAPITAL balance ${capitalBalance ?? '(missing)'} does not equal minus the grants (${negate(total).toString()})`,
     });
   }
+  return out;
+}
+
+export interface ReconcileOptions {
+  /**
+   * Also check the trading tables (I4, I5, I6, position cost, realised P&L), with zero tolerance.
+   * Off by default: the M1 ledger tests post FILL ledger transactions without any lots or orders, and
+   * those accounts would otherwise be flagged. Accounts that trade must always be reconciled with this on.
+   */
+  readonly trading?: boolean;
+}
+
+/** Read-only. Returns the violations; an empty list means the account is clean. */
+export async function reconcileAccount(
+  client: Queryable,
+  accountId: string,
+  options: ReconcileOptions = {},
+): Promise<Violation[]> {
+  const out = await reconcileLedger(client, accountId);
+  if (options.trading === true) out.push(...(await reconcileTrading(client, accountId)));
   return out;
 }

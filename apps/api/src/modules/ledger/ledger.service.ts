@@ -6,6 +6,7 @@ import type {
   PostedTransaction,
   PostTransactionInput,
   Queryable,
+  ReconcileOptions,
   Violation,
 } from './index.js';
 
@@ -21,8 +22,12 @@ export class LedgerService {
   postTransaction(client: Queryable, input: PostTransactionInput): Promise<PostedTransaction> {
     return postTransaction(client, input);
   }
-  reconcileAccount(client: Queryable, accountId: string): Promise<Violation[]> {
-    return reconcileAccount(client, accountId);
+  reconcileAccount(
+    client: Queryable,
+    accountId: string,
+    options?: ReconcileOptions,
+  ): Promise<Violation[]> {
+    return reconcileAccount(client, accountId, options);
   }
 }
 
