@@ -21,6 +21,9 @@
     },
     {
       "path": "../../packages/engine/tsconfig.build.json"
+    },
+    {
+      "path": "../../packages/market-model/tsconfig.build.json"
     }
   ]
 }

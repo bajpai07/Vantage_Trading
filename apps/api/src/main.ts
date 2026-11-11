@@ -11,7 +11,12 @@ if (mode !== 'start') {
   process.exitCode = mode;
 } else {
   try {
-    loadConfigFromProcess(); // fail fast (exit 2) with the redacted aggregated error
+    const config = loadConfigFromProcess(); // fail fast (exit 2) with the redacted aggregated error
+    if (config.marketDataSource === 'PROVIDER') {
+      // M3a ships no vendor adapter; say so clearly instead of serving anything (M3b adds one).
+      io.err('no provider adapter installed; M3b');
+      process.exit(2);
+    }
   } catch (e) {
     io.err(e instanceof ConfigError ? e.message : 'Invalid configuration');
     process.exit(2);

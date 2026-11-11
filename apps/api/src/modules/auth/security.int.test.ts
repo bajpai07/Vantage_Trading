@@ -4,6 +4,7 @@ import { createTestDatabase } from '@vantage/test-utils';
 import type { TestDatabase } from '@vantage/test-utils';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { LedgerService } from '../ledger/ledger.service.js';
+import { MarketStartup } from '../market-data/market.startup.js';
 import { POOL } from '../../tokens.js';
 import {
   VALID_PASSWORD,
@@ -280,7 +281,13 @@ describe('9. health, request ids, and no leaks', () => {
     const closed = new pg.Pool({ connectionString: db.appUrl });
     await closed.query('SELECT 1'); // proves it was a working pool...
     await closed.end(); // ...that is now closed
-    const hc = await createHarness(db, { overrides: [[POOL, closed]] });
+    // the market startup step needs a database, so it is replaced by a no-op for this closed-pool app
+    const hc = await createHarness(db, {
+      overrides: [
+        [POOL, closed],
+        [MarketStartup, { onApplicationBootstrap: () => Promise.resolve() }],
+      ],
+    });
     try {
       const ready = await hc.http.get('/health/ready');
       expect(ready.status).toBe(503);

@@ -13,3 +13,6 @@ export interface Clock {
   now(): Date;
 }
 export const systemClock: Clock = { now: () => new Date() };
+
+export const PROVIDER = Symbol('PROVIDER');
+export const QUOTE_STORE = Symbol('QUOTE_STORE');

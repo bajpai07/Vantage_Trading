@@ -2,9 +2,11 @@
 // All money fields are decimal STRINGS, never numbers.
 import { z } from 'zod';
 import { COUNTRY_CODES } from './countries.js';
+import { MoneyString } from './money-string.js';
 
 export { COUNTRY_CODES } from './countries.js';
 export type { CountryCode } from './countries.js';
+export { MoneyString } from './money-string.js';
 
 /** Trim, lower-case: the form used for comparisons and rate-limit keys. The stored email is only trimmed. */
 export const normalizeEmail = (email: string): string => email.trim().toLowerCase();
@@ -39,11 +41,6 @@ export const LoginRequest = z.strictObject({
 });
 export type LoginRequest = z.output<typeof LoginRequest>;
 
-/** Canonical decimal string: at least two decimal places, e.g. "10000.00" or "-49.6000". */
-export const MoneyString = z
-  .string()
-  .regex(/^-?\d+\.\d{2,}$/, 'must be a canonical decimal string');
-
 export const UserRole = z.enum(['USER', 'SUPPORT', 'ADMIN', 'SUPERADMIN']);
 export const UserStatus = z.enum(['PENDING_VERIFICATION', 'ACTIVE', 'SUSPENDED', 'DELETED']);
 
@@ -74,3 +71,5 @@ export const ErrorEnvelope = z.strictObject({
   }),
 });
 export type ErrorEnvelope = z.output<typeof ErrorEnvelope>;
+
+export * from './market.js';

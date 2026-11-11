@@ -22,11 +22,13 @@ export interface Harness {
   readonly config: Config;
   /** Captured log lines (JSON strings). */
   readonly logs: string[];
-  readonly clock: { now(): Date; advance(ms: number): void };
+  readonly clock: { now(): Date; advance(ms: number): void; set(iso: string): void };
   close(): Promise<void>;
 }
 
 export interface HarnessOptions {
+  /** Initial value of the injected clock (ISO). Default 2026-11-10T12:00:00Z. */
+  readonly now?: string;
   readonly env?: Record<string, string | undefined>;
   /** token -> replacement value (useValue). */
   readonly overrides?: ReadonlyArray<readonly [unknown, unknown]>;
@@ -44,11 +46,14 @@ export async function createHarness(db: TestDatabase, opts: HarnessOptions = {})
   );
   const logs: string[] = [];
   const logger = createLogger('debug', (line) => logs.push(line));
-  let t = Date.parse('2026-11-10T12:00:00.000Z');
-  const clock: Clock & { advance(ms: number): void } = {
+  let t = Date.parse(opts.now ?? '2026-11-10T12:00:00.000Z');
+  const clock: Clock & { advance(ms: number): void; set(iso: string): void } = {
     now: () => new Date(t),
     advance: (ms) => {
       t += ms;
+    },
+    set: (iso) => {
+      t = Date.parse(iso);
     },
   };
 
