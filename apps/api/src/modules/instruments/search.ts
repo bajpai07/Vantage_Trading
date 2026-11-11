@@ -67,14 +67,14 @@ export async function searchInstruments(
             CASE WHEN upper(i.symbol) = $2 THEN 0
                  WHEN i.symbol ILIKE $3 ESCAPE '\\' OR i.name ILIKE $3 ESCAPE '\\' OR i.name ILIKE $4 ESCAPE '\\' THEN 1
                  ELSE 2 END AS rank,
-            GREATEST(similarity(i.symbol, $1), similarity(i.name, $1)) AS sim
+            GREATEST(similarity(i.symbol, $1), word_similarity($1, i.name)) AS sim
        FROM instruments i JOIN exchanges e ON e.id = i.exchange_id
       WHERE upper(i.symbol) = $2
          OR i.symbol ILIKE $3 ESCAPE '\\'
          OR i.name ILIKE $3 ESCAPE '\\'
          OR i.name ILIKE $4 ESCAPE '\\'
          OR similarity(i.symbol, $1) >= 0.2
-         OR similarity(i.name, $1) >= 0.25
+         OR word_similarity($1, i.name) >= 0.4
       ORDER BY rank, sim DESC, i.symbol, e.code
       LIMIT $5::int`,
     [q, q.toUpperCase(), `${escaped}%`, `% ${escaped}%`, limit],
