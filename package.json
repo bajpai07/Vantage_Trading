@@ -21,7 +21,8 @@
     "db:status": "node --env-file=.env.infra tools/migrate.mjs status",
     "test:cleanup": "tsx tools/cleanup-test-dbs.ts",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration",
-    "bench:search": "tsx tools/bench-search.ts"
+    "bench:search": "tsx tools/bench-search.ts",
+    "bench:orders": "node --conditions=source --import tsx tools/bench-orders.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
