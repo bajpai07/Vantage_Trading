@@ -88,6 +88,8 @@ The execution worker processes orders of a given account serially (BullMQ queue 
 
 `/api/v1/{auth,users,accounts,instruments,markets,orders,positions,portfolio,watchlists,analytics,competitions,notifications,admin}`. JSON, camelCase, decimals as strings, cursor pagination, `Idempotency-Key` on mutating order endpoints, Zod validation at the boundary, uniform error body `{error:{code,message,details,requestId}}`, OpenAPI generated from the contracts package and published to `API_SPEC.md` (to be generated in Phase 3). Rate limits (Redis token bucket): auth 5/min/IP, orders 30/min/account, reads 300/min/user, admin 60/min.
 
+- **Note (M3a):** API conventions (`/v1`, error envelope, cookie sessions) follow `docs/api.md`, which supersedes section 6 where they differ.
+
 ## 7. Security architecture (summary; full SECURITY.md in Phase 3)
 
 - Argon2id; opaque session tokens (hashed in DB), httpOnly+Secure+SameSite=Lax cookies; CSRF via Origin check + token on mutations; session rotation on login and privilege change.
