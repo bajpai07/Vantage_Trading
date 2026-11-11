@@ -136,8 +136,8 @@ const toOrder = (r: OrderRow): OrderRecord => ({
   instrumentId: r.instrument_id,
   clientOrderId: r.client_order_id,
   side: r.side,
-  qty: r.qty,
-  filledQty: r.filled_qty,
+  qty: parse(r.qty).toString(),
+  filledQty: parse(r.filled_qty).toString(),
   status: r.status,
   rejectCode: r.reject_code,
 });
@@ -150,16 +150,16 @@ export async function executeMarketOrder(
   cmd: MarketOrderCommand,
   hooks: ExecuteHooks = {},
 ): Promise<ExecutionResult> {
-  // 1. LOCK the account row first, always.
-  const acct = await client.query<{ status: string; user_status: string }>(
-    `SELECT a.status, u.status::text AS user_status
-       FROM accounts a JOIN users u ON u.id = a.user_id
-      WHERE a.id = $1::uuid FOR UPDATE OF a`,
+  // 1. LOCK the account row first, always (via a SECURITY DEFINER function: the app role has no UPDATE on accounts).
+  const acct = await client.query<{ account_status: string | null; user_status: string | null }>(
+    `SELECT account_status, user_status FROM lock_account_for_order($1::uuid)`,
     [cmd.accountId],
   );
   const account = acct.rows[0];
-  if (account === undefined) throw new AccountNotFoundError('account not found');
-  const accountActive = account.status === 'ACTIVE' && account.user_status === 'ACTIVE';
+  if (account?.account_status === null || account?.account_status === undefined) {
+    throw new AccountNotFoundError('account not found');
+  }
+  const accountActive = account.account_status === 'ACTIVE' && account.user_status === 'ACTIVE';
 
   // 2. REPLAY: an order with this clientOrderId already exists
   const existing = await client.query<OrderRow>(
@@ -169,9 +169,8 @@ export async function executeMarketOrder(
   if (existing.rows[0] !== undefined) return replay(client, cmd, existing.rows[0]);
 
   // 3. READ and lock cash, then the position, then its open lots (oldest first)
-  const cashRow = await client.query<{ balance: string }>(
-    `SELECT balance FROM ledger_accounts
-      WHERE account_id = $1::uuid AND type = 'CASH' AND currency = 'USD' FOR UPDATE`,
+  const cashRow = await client.query<{ balance: string | null }>(
+    `SELECT lock_cash_balance($1::uuid) AS balance`,
     [cmd.accountId],
   );
   const cash = cashRow.rows[0]?.balance ?? '0';
@@ -541,11 +540,11 @@ async function replay(
     execution: {
       id: e.id,
       orderId: row.id,
-      price: e.price,
-      qty: e.qty,
-      feeLocal: e.fee_local,
-      grossUsd: e.gross_usd,
-      slippageBps: e.slippage_bps,
+      price: parse(e.price).toString(),
+      qty: parse(e.qty).toString(),
+      feeLocal: parse(e.fee_local).toString(),
+      grossUsd: parse(e.gross_usd).toString(),
+      slippageBps: parse(e.slippage_bps).toString(),
       ledgerTxId: e.ledger_tx_id,
       modelVersion: e.model_version,
       executedAt: e.executed_at,
