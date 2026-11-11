@@ -129,6 +129,9 @@ importers:
 
   packages/engine:
     dependencies:
+      '@vantage/market-model':
+        specifier: workspace:*
+        version: link:../market-model
       '@vantage/money':
         specifier: workspace:*
         version: link:../money

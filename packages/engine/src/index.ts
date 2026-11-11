@@ -1,6 +1,7 @@
 // Pure posting recipes (TRADING_ENGINE section 5.1). No IO, no clock, no randomness, no floats.
 // A leg is signed: positive increases the ledger account balance, negative decreases it.
 import type { Dec } from '@vantage/money';
+import { EngineInputError, EngineInvariantError, UnsupportedCurrencyError } from './errors.js';
 import { isZero, mul, negate, parse, round8, sign, sub, add } from '@vantage/money';
 
 export type LedgerAccountType =
@@ -18,20 +19,6 @@ export interface Leg {
   readonly currency: string;
   /** Signed fixed-point string with exactly 8 decimal places. */
   readonly amount: string;
-}
-
-export class EngineInputError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
-}
-export class UnsupportedCurrencyError extends EngineInputError {}
-export class EngineInvariantError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = new.target.name;
-  }
 }
 
 const USD = 'USD';
@@ -153,3 +140,7 @@ export function sellFillLegs(input: SellFillInput): Leg[] {
   assertBalanced(legs);
   return legs;
 }
+
+export * from './errors.js';
+export * from './lots.js';
+export * from './market-order.js';

@@ -48,6 +48,9 @@ describe('engine determinism guard (ESLint)', () => {
   it('the real engine and money sources are clean', async () => {
     const results = await eslint.lintFiles([
       'packages/engine/src/index.ts',
+      'packages/engine/src/errors.ts',
+      'packages/engine/src/lots.ts',
+      'packages/engine/src/market-order.ts',
       'packages/money/src/index.ts',
     ]);
     expect(results.flatMap((r) => r.messages)).toEqual([]);

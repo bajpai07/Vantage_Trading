@@ -11,6 +11,9 @@
   "references": [
     {
       "path": "../money/tsconfig.build.json"
+    },
+    {
+      "path": "../market-model/tsconfig.build.json"
     }
   ]
 }
