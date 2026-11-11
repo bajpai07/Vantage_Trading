@@ -21,6 +21,8 @@ export default defineConfig({
         extends: true,
         test: {
           name: 'unit',
+          // The ESLint-based guard tests load the whole flat config on first use, which can take several seconds cold.
+          testTimeout: 30_000,
           include: ['{apps,packages,tools}/**/*.test.ts'],
           exclude: ['**/node_modules/**', '**/dist/**', '**/*.int.test.ts'],
         },
