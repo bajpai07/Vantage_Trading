@@ -25,6 +25,16 @@ pnpm verify             # format, lint, typecheck, build, unit and integration t
 pnpm db:down
 ```
 
+### Start the API locally
+
+```bash
+pnpm build
+node --env-file=.env apps/api/dist/main.js         # serves on http://127.0.0.1:3000
+node --env-file=.env apps/api/dist/main.js --check # validate configuration only
+```
+
+`.env` (created by `pnpm setup:env` from `.env.example`) must contain `WEB_ORIGIN`, the single origin that CORS and the CSRF check accept (for example `http://localhost:3000`). `COOKIE_SECURE=false` is allowed only when `APP_ENV` is `local` or `test`. If your `.env` was created before M2, add `WEB_ORIGIN` and `COOKIE_SECURE` by hand (see `.env.example`). Endpoints and rules are in [docs/api.md](docs/api.md).
+
 ### The Postgres host port is configurable
 
 The default host port is **55432**, set by `POSTGRES_HOST_PORT` in `.env.infra.example`. If it is busy on your machine, `pnpm setup:env` stops with a clear message and writes nothing; choose a free one with `pnpm setup:env --port 55433`. The port is then written into `.env.infra` (and into the `DATABASE_URL` and `DATABASE_MIGRATOR_URL` values), and the compose file, the migration wrapper, the test helper and all scripts read it from there. Nothing hard-codes a port.
@@ -39,8 +49,10 @@ Neither is committed. Only `.env.example` and `.env.infra.example` are tracked. 
 ## Layout
 
 ```
-apps/api/                 bare TypeScript entry (NestJS arrives in M2); `--check` validates config
+apps/api/                 NestJS API (auth, account, ledger, health); `--check` validates config
 packages/config/          Zod config and guards
+packages/contracts/       Zod request/response schemas shared with the web app
+packages/engine/          pure posting recipes (no IO)
 packages/money/           empty skeleton (logic in M1) with lint rules that ban float-style code
 packages/test-utils/      database test helper
 db/migrations/            plain forward-only .sql files
