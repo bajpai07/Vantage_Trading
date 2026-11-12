@@ -148,3 +148,5 @@ Backups: PITR (WAL) + daily snapshot, RPO ≤ 5 min, RTO ≤ 2 h; quarterly rest
 4. WebSocket: 1,000 clients × 20 symbols, tick→client p95 < 500 ms; no client receives events for another user's account (security test).
 5. Restore drill: restore latest backup, run invariants I1–I10 with zero violations, within the RTO.
 6. Zero secrets in repo (secret-scan in CI) and zero provider keys in the web bundle (bundle scan).
+
+- **Note (M4b, supersedes the 202 in section 5):** with synchronous market execution (D-30) `POST /v1/orders` returns **201** with the order (FILLED or REJECTED); a replay returns the stored status and body. See docs/api.md and D-58, D-59.

@@ -69,6 +69,17 @@ Why two lock functions (D-55): PostgreSQL requires the UPDATE privilege for any 
 
 `reconcileAccount` checks the trading tables **by default** (D-56). The opt-out `{ trading: false }` exists only for the old M1 ledger-only tests, which post `FILL` transactions with no lots; no account that trades may be reconciled without the trading checks. The reverse check (a `FILL` ledger transaction with no execution) is not made for the same reason.
 
-## What M4b adds
+## HTTP layer (M4b)
 
-HTTP endpoints and DTOs (Zod contracts), the `Idempotency-Key` handling on top of the existing `idempotency_keys` table (stored in the same transaction), resolving the instrument, quote, freshness, fee schedule and `allowExecutionOnDelayed` into the command (using `QuoteService`), the trading-enabled kill switch, order and position read endpoints, and order history. Later: limit and stop orders, reservations, cancel, the async matcher and the account-event outbox.
+Endpoints, examples and error codes: [api.md](api.md). Decisions D-55 to D-59 are in specs/DECISIONS.md.
+
+- **Server decides (D-59).** resolves the account (the session user's MAIN account), the instrument by symbol (unknown: 404), the quote and freshness (, which uses only the shared ), the fee schedule (exchange-specific first, else the latest global version effective at ), and the time from the injected clock. The client sends symbol, side, qty, type and only.
+- **Idempotency (D-58).** The header is stored as . Flow: look up (one query together with the account lookup); same canonical request hash returns the stored status and body; a different hash is 422 ; otherwise one transaction: lock the account, re-check the key (a concurrent twin may have committed), , insert the idempotency row with the response, commit. The row and the order commit together or not at all. 50 parallel identical requests produce one fill.
+- ** is an unreachable guard.** The key row and the order are written in one transaction under the account lock, so an order with an existing client order id cannot appear without its key row. The executor's own replay check and the index remain as second guards; if one ever fires through HTTP it maps to 409.
+- **New reject code (D-57).** is rule 10: a SELL whose fee is larger than its proceeds. A fee equal to the proceeds still fills.
+- **Rate limit.** 30 orders per user per minute (in memory, per process; ).
+- **Round trips.** A first-time FILL costs 29 database round trips (session, account and key lookup, instrument and fee schedule, BEGIN, lock, key re-check, status, replay check, cash lock and read, position, lots, the ledger post, order, three events in one statement, execution, lot or closures, position, idempotency row, COMMIT, audit). The executor does not repeat the account lock the service already took ().
+
+## What comes next
+
+Limit and stop orders, reservations, cancel, the async matcher, the account-event outbox, the purge of idempotency rows after 48 hours, portfolio valuation and P&L (M5).
