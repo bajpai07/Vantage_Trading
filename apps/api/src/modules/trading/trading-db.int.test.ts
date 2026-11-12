@@ -15,6 +15,7 @@ import {
   run,
 } from '../../testing/trading-kit.js';
 import type { TestInstrument } from '../../testing/trading-kit.js';
+import { reconcileAccount } from '../ledger/reconcile.js';
 import { postTransaction } from '../ledger/repository.js';
 
 let db: TestDatabase;
@@ -331,5 +332,99 @@ describe('7c. the commit-time triggers (I4 and I5) fire on inconsistent data and
       await handBuilt(c, a, inst, { reuseLedgerTx: shared, positionQty: null, skipLot: true });
     });
     expect(err).toMatchObject({ code: '23505', constraint: 'executions_ledger_tx_id_key' });
+  });
+});
+
+describe('D-55: the SECURITY DEFINER lock functions are narrow', () => {
+  const FUNCTIONS = ['lock_account_for_order', 'lock_cash_balance'] as const;
+  it.each(FUNCTIONS)(
+    '%s: SECURITY DEFINER, returns void, fixed search_path, EXECUTE only for the owner and vantage_app, none for PUBLIC',
+    async (name) => {
+      const r = await db.migrator.query<{
+        secdef: boolean;
+        returns: string;
+        config: string[] | null;
+        grantees: string[];
+        args: number;
+      }>(
+        `SELECT p.prosecdef AS secdef, p.prorettype::regtype::text AS returns, p.proconfig AS config,
+                p.pronargs AS args,
+                ARRAY(SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee)::text END
+                        FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+                       WHERE a.privilege_type = 'EXECUTE' ORDER BY 1) AS grantees
+           FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+          WHERE n.nspname = 'public' AND p.proname = $1`,
+        [name],
+      );
+      expect(r.rows).toHaveLength(1); // exactly one overload: the old OUT-parameter version is gone
+      const f = r.rows[0];
+      expect(f?.secdef).toBe(true);
+      expect(f?.returns).toBe('void');
+      expect(f?.args).toBe(1);
+      expect(f?.config).toEqual(['search_path=pg_catalog, public, pg_temp']);
+      expect(f?.grantees).not.toContain('PUBLIC');
+      expect(f?.grantees).toContain('vantage_app');
+      expect(f?.grantees.filter((g) => g !== 'vantage_app' && g !== 'vantage_migrator')).toEqual(
+        [],
+      );
+    },
+  );
+
+  it('the check can fail (control): a plain function has the default ACL, which includes PUBLIC', async () => {
+    const r = await db.migrator.query<{ grantees: string[] }>(
+      `SELECT ARRAY(SELECT DISTINCT CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE pg_get_userbyid(a.grantee)::text END
+                      FROM aclexplode(COALESCE(p.proacl, acldefault('f', p.proowner))) a
+                     WHERE a.privilege_type = 'EXECUTE') AS grantees
+         FROM pg_proc p WHERE p.proname = 'now' AND p.pronargs = 0`,
+    );
+    expect(r.rows[0]?.grantees).toContain('PUBLIC');
+  });
+
+  it('the app role gets no table privilege from them: FOR UPDATE directly is refused, the function works (control)', async () => {
+    for (const t of ['accounts', 'ledger_accounts']) {
+      const p = await db.app.query(`SELECT has_table_privilege('vantage_app', $1, 'UPDATE') AS u`, [
+        t,
+      ]);
+      expect(p.rows[0]?.u).toBe(false);
+    }
+    await expect(
+      db.app.query(`SELECT id FROM accounts WHERE id = $1::uuid FOR UPDATE`, [acct]),
+    ).rejects.toMatchObject({ code: '42501' });
+    const c = await db.app.connect();
+    try {
+      await c.query('BEGIN');
+      await c.query(`SELECT lock_account_for_order($1::uuid)`, [acct]);
+      await c.query(`SELECT lock_cash_balance($1::uuid)`, [acct]);
+      await c.query('COMMIT');
+    } finally {
+      c.release();
+    }
+  });
+});
+
+describe('D-56: reconcileAccount runs the trading checks by default', () => {
+  it('a FILL ledger transaction with no execution or lots is flagged by default and clean only with the explicit opt-out; a properly traded account is clean (control)', async () => {
+    const a = await createFundedAccount(db.app);
+    const c = await db.app.connect();
+    try {
+      await c.query('BEGIN');
+      await postTransaction(c, {
+        accountId: a,
+        kind: 'FILL',
+        idempotencyKey: `d56:${randomUUID()}`,
+        legs: buyFillLegs({ qty: '1', price: '100', fee: '0' }),
+      });
+      await c.query('COMMIT');
+    } finally {
+      c.release();
+    }
+    const byDefault = await reconcileAccount(db.app, a);
+    expect(byDefault.map((v) => v.invariant)).toContain('POSITION_COST');
+    expect(await reconcileAccount(db.app, a, { trading: false })).toEqual([]);
+    expect(await reconcileAccount(db.app, a, { trading: true })).toEqual(byDefault);
+    // control: an account that trades through executeMarketOrder is clean by default
+    const t = await createFundedAccount(db.app);
+    await run(db.app, command(t, aapl, { qty: '2', clientOrderId: 'd56-control' }));
+    expect(await reconcileAccount(db.app, t)).toEqual([]);
   });
 });

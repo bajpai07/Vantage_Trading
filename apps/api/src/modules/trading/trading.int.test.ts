@@ -11,6 +11,7 @@ import {
   run,
 } from '../../testing/trading-kit.js';
 import type { TestInstrument } from '../../testing/trading-kit.js';
+import { parse } from '@vantage/money';
 import { reconcileAccount } from '../ledger/reconcile.js';
 import { ClientOrderIdMismatchError } from './errors.js';
 
@@ -25,7 +26,7 @@ afterAll(async () => {
 });
 
 const clean = async (accountId: string): Promise<void> => {
-  expect(await reconcileAccount(db.app, accountId, { trading: true })).toEqual([]);
+  expect(await reconcileAccount(db.app, accountId)).toEqual([]); // trading checks are ON by default (D-56)
 };
 const one = async (sql: string, params: unknown[]): Promise<pg.QueryResultRow> => {
   const r = await db.migrator.query(sql, params);
@@ -381,6 +382,76 @@ describe('2. every reject code is reachable and a reject changes nothing but the
     ['INSUFFICIENT_POSITION', { side: 'SELL' as const, bid: '195.00', ask: '195.05' }], // nothing to sell
   ] as Array<[string, Parameters<typeof command>[2]]>)('%s', async (code, over) => {
     await expectReject(over, code);
+  });
+
+  // D-57: a SELL whose commission is larger than its proceeds is a persisted business reject, never a DB error.
+  // The schedule has a 5.00 minimum commission (built here, not seeded): BUY 3 at ask 2.00 -> 2.01, then SELL.
+  const MIN_FEE_SCHEDULE = {
+    commissionBps: '0',
+    commissionMinLocal: '5',
+    slippageBaseBps: '2',
+    slippageSizeCoef: '0',
+    modelVersion: 'QBX-1/r8he',
+  };
+  it('FEE_EXCEEDS_PROCEEDS: a 1-share SELL (proceeds 1.99) with a 5.00 minimum fee is rejected, money unchanged; a 3-share SELL (control) fills', async () => {
+    const acct = await createFundedAccount(db.app);
+    await run(
+      db.app,
+      command(acct, aapl, {
+        clientOrderId: 'fee-buy',
+        qty: '3',
+        bid: '1.99',
+        ask: '2.00',
+        feeSchedule: { ...MIN_FEE_SCHEDULE, commissionMinLocal: '0' },
+      }),
+    );
+    const before = await accountState(db, acct);
+    const tiny = command(acct, aapl, {
+      side: 'SELL',
+      qty: '1',
+      bid: '2.00',
+      ask: '2.05',
+      clientOrderId: 'fee-sell-1',
+      feeSchedule: MIN_FEE_SCHEDULE,
+    });
+    const r = await run(db.app, tiny);
+    expect(r).toMatchObject({ outcome: 'REJECTED', rejectCode: 'FEE_EXCEEDS_PROCEEDS' });
+    const order = await one(
+      `SELECT status::text AS status, reject_code FROM orders WHERE id = $1::uuid`,
+      [tiny.orderId],
+    );
+    expect(order).toEqual({ status: 'REJECTED', reject_code: 'FEE_EXCEEDS_PROCEEDS' });
+    const after = await accountState(db, acct);
+    expect(after.balances).toEqual(before.balances);
+    expect(after.positions).toEqual(before.positions);
+    expect(after.lots).toEqual(before.lots);
+    expect(after.counts).toEqual({
+      ...before.counts,
+      orders: (before.counts.orders ?? 0) + 1,
+      events: (before.counts.events ?? 0) + 2,
+    });
+
+    // control: 3 shares at bid 2.00 -> 1.99 each, proceeds 5.97 > fee 5.00: fills, cash +0.97
+    const big3 = command(acct, aapl, {
+      side: 'SELL',
+      qty: '3',
+      bid: '2.00',
+      ask: '2.05',
+      clientOrderId: 'fee-sell-3',
+      feeSchedule: MIN_FEE_SCHEDULE,
+    });
+    const ok = await run(db.app, big3);
+    expect(ok.outcome).toBe('FILLED');
+    const cash = await one(
+      `SELECT balance FROM ledger_accounts WHERE account_id = $1::uuid AND type = 'CASH'`,
+      [acct],
+    );
+    expect(parse(cash.balance as string).toString()).toBe(
+      parse(before.balances.CASH ?? '0')
+        .add(parse('0.97'))
+        .toString(),
+    );
+    await clean(acct);
   });
 
   it('ACCOUNT_NOT_ACTIVE: a frozen account and a suspended user are both rejected (control: ACTIVE trades)', async () => {

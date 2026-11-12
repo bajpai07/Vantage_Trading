@@ -30,6 +30,7 @@ export type OrderSide = 'BUY' | 'SELL';
  *                           DELAYED while allowExecutionOnDelayed is false -> NO_ELIGIBLE_QUOTE
  * 8 PRICE_MOVED             the price moved against the user by more than the collar (D-51)
  * 9 funds / position        BUY: INSUFFICIENT_BUYING_POWER (cash < notional + fee); SELL: INSUFFICIENT_POSITION
+ * 10 FEE_EXCEEDS_PROCEEDS   SELL only, after the position check: the fee is larger than the proceeds (D-57)
  */
 export const REJECT_RULE_ORDER = [
   'TRADING_PAUSED',
@@ -44,6 +45,7 @@ export const REJECT_RULE_ORDER = [
   'PRICE_MOVED',
   'INSUFFICIENT_BUYING_POWER',
   'INSUFFICIENT_POSITION',
+  'FEE_EXCEEDS_PROCEEDS',
 ] as const;
 export type RejectCode = (typeof REJECT_RULE_ORDER)[number];
 
@@ -209,8 +211,10 @@ export function decideMarketOrder(input: MarketOrderInput): MarketOrderDecision 
     if (compare(parse(input.cash), add(parse(notional), parse(fee))) < 0) {
       return reject('INSUFFICIENT_BUYING_POWER');
     }
-  } else if (compare(parse(input.positionQty), qty) < 0) {
-    return reject('INSUFFICIENT_POSITION');
+  } else {
+    if (compare(parse(input.positionQty), qty) < 0) return reject('INSUFFICIENT_POSITION');
+    // D-57: a SELL whose fee is larger than its proceeds is a business reject, never a database error.
+    if (compare(parse(fee), parse(notional)) > 0) return reject('FEE_EXCEEDS_PROCEEDS');
   }
   return { decision: 'FILL', price, notional, fee, slippageBps };
 }

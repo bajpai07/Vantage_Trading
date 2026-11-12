@@ -187,6 +187,7 @@ describe('rule order: the first failure wins', () => {
       'PRICE_MOVED',
       'INSUFFICIENT_BUYING_POWER',
       'INSUFFICIENT_POSITION',
+      'FEE_EXCEEDS_PROCEEDS',
     ]);
   });
 
@@ -215,6 +216,36 @@ describe('rule order: the first failure wins', () => {
   ];
   it.each(cases)('%s', (code, over) => {
     expect(reject(over)).toBe(code);
+  });
+
+  // D-57. A schedule with a 5.00 minimum commission: a 1-share SELL at bid 2.00 (2.00 x 0.9998 = 1.9996, down
+  // to the tick = 1.99) has proceeds 1.99 and pays a fee of 5.00, which is more than the proceeds.
+  const MIN_FEE = { ...SCHEDULE_V1, commissionMinLocal: '5' };
+  const tinySell = (over: Partial<MarketOrderInput> = {}): Partial<MarketOrderInput> => ({
+    side: 'SELL',
+    qty: '1',
+    positionQty: '1',
+    quote: { bid: '2.00', ask: '2.05' },
+    referencePrice: '2.00',
+    schedule: MIN_FEE,
+    ...over,
+  });
+  it('FEE_EXCEEDS_PROCEEDS: fee 5.00 against proceeds 1.99 is rejected', () => {
+    expect(reject(tinySell())).toBe('FEE_EXCEEDS_PROCEEDS');
+  });
+  it('FEE_EXCEEDS_PROCEEDS controls: fee equal to the proceeds fills, a larger SELL fills, a BUY is not affected', () => {
+    // 1 share at bid 5.01: 5.01 x 0.9998 = 5.009 -> 5.00 down; proceeds 5.00 equal to the fee 5.00 (not greater)
+    expect(reject(tinySell({ quote: { bid: '5.01', ask: '5.05' }, referencePrice: '5.01' }))).toBe(
+      'FILL:5',
+    );
+    // 10 shares at 2.00: proceeds 19.90, fee 5.00
+    expect(reject(tinySell({ qty: '10', positionQty: '10' }))).toBe('FILL:1.99');
+    expect(reject(tinySell({ side: 'BUY', positionQty: '0', referencePrice: '2.05' }))).toBe(
+      'FILL:2.06',
+    );
+  });
+  it('FEE_EXCEEDS_PROCEEDS comes after INSUFFICIENT_POSITION', () => {
+    expect(reject(tinySell({ positionQty: '0' }))).toBe('INSUFFICIENT_POSITION');
   });
 
   it('a SELL on a SELL_ONLY instrument is tradable (control)', () => {

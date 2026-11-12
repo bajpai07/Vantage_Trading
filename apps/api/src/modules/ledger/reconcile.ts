@@ -122,8 +122,9 @@ async function reconcileLedger(client: Queryable, accountId: string): Promise<Vi
 export interface ReconcileOptions {
   /**
    * Also check the trading tables (I4, I5, I6, position cost, realised P&L), with zero tolerance.
-   * Off by default: the M1 ledger tests post FILL ledger transactions without any lots or orders, and
-   * those accounts would otherwise be flagged. Accounts that trade must always be reconciled with this on.
+   * ON BY DEFAULT (D-56). `{ trading: false }` is an explicit opt-out used only by the old M1 ledger-only tests,
+   * which post FILL ledger transactions without any orders or lots. No account that trades may be reconciled
+   * without the trading checks.
    */
   readonly trading?: boolean;
 }
@@ -135,6 +136,6 @@ export async function reconcileAccount(
   options: ReconcileOptions = {},
 ): Promise<Violation[]> {
   const out = await reconcileLedger(client, accountId);
-  if (options.trading === true) out.push(...(await reconcileTrading(client, accountId)));
+  if (options.trading !== false) out.push(...(await reconcileTrading(client, accountId)));
   return out;
 }

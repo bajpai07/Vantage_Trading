@@ -150,15 +150,17 @@ export async function executeMarketOrder(
   cmd: MarketOrderCommand,
   hooks: ExecuteHooks = {},
 ): Promise<ExecutionResult> {
-  // 1. LOCK the account row first, always (via a SECURITY DEFINER function: the app role has no UPDATE on accounts).
-  const acct = await client.query<{ account_status: string | null; user_status: string | null }>(
-    `SELECT account_status, user_status FROM lock_account_for_order($1::uuid)`,
+  // 1. LOCK the account row first, always (via a SECURITY DEFINER function that only locks and returns nothing:
+  //    the app role has no UPDATE on accounts, D-55). The status is then read with a NEW statement, so it is the
+  //    latest committed state after the wait for the lock.
+  await client.query(`SELECT lock_account_for_order($1::uuid)`, [cmd.accountId]);
+  const acct = await client.query<{ account_status: string; user_status: string }>(
+    `SELECT a.status AS account_status, u.status::text AS user_status
+       FROM accounts a JOIN users u ON u.id = a.user_id WHERE a.id = $1::uuid`,
     [cmd.accountId],
   );
   const account = acct.rows[0];
-  if (account?.account_status === null || account?.account_status === undefined) {
-    throw new AccountNotFoundError('account not found');
-  }
+  if (account === undefined) throw new AccountNotFoundError('account not found');
   const accountActive = account.account_status === 'ACTIVE' && account.user_status === 'ACTIVE';
 
   // 2. REPLAY: an order with this clientOrderId already exists
@@ -169,8 +171,10 @@ export async function executeMarketOrder(
   if (existing.rows[0] !== undefined) return replay(client, cmd, existing.rows[0]);
 
   // 3. READ and lock cash, then the position, then its open lots (oldest first)
-  const cashRow = await client.query<{ balance: string | null }>(
-    `SELECT lock_cash_balance($1::uuid) AS balance`,
+  await client.query(`SELECT lock_cash_balance($1::uuid)`, [cmd.accountId]);
+  const cashRow = await client.query<{ balance: string }>(
+    `SELECT balance FROM ledger_accounts
+      WHERE account_id = $1::uuid AND type = 'CASH' AND currency = 'USD'`,
     [cmd.accountId],
   );
   const cash = cashRow.rows[0]?.balance ?? '0';

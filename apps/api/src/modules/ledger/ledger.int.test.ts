@@ -17,6 +17,10 @@ import {
 } from './index.js';
 import type { PostLeg } from './index.js';
 
+// D-56: reconcileAccount checks the trading tables by default. These M1 ledger-only tests post FILL ledger
+// transactions without orders or lots, so they opt out explicitly. No trading test may do this.
+const NO_TRADING = { trading: false } as const;
+
 let db: TestDatabase;
 beforeAll(async () => {
   db = await createTestDatabase();
@@ -189,7 +193,7 @@ describe('2. golden vectors through the repository', () => {
       REALIZED_PNL_USD: '-49.6000000000',
       CAPITAL_USD: '-10000.0000000000',
     });
-    expect(await reconcileAccount(db.app, id)).toEqual([]);
+    expect(await reconcileAccount(db.app, id, NO_TRADING)).toEqual([]);
   });
 
   it('the sell with fee 1.95: exact entries and final balances', async () => {
@@ -214,7 +218,7 @@ describe('2. golden vectors through the repository', () => {
       REALIZED_PNL_USD: '-49.6000000000',
       CAPITAL_USD: '-10000.0000000000',
     });
-    expect(await reconcileAccount(db.app, id)).toEqual([]);
+    expect(await reconcileAccount(db.app, id, NO_TRADING)).toEqual([]);
   });
 });
 
@@ -506,7 +510,7 @@ describe('6. no overdraft', () => {
       [id],
     );
     expect(Number(after.rows[0]?.n)).toBe(Number(before.rows[0]?.n) + 2);
-    expect(await reconcileAccount(db.app, id)).toEqual([]);
+    expect(await reconcileAccount(db.app, id, NO_TRADING)).toEqual([]);
   });
 });
 
@@ -544,7 +548,7 @@ describe('7. concurrency', () => {
     const b = await balances(id, big);
     expect(b['CASH_USD']).toBe('0.0000000000');
     expect(b['POSITION_COST_USD']).toBe('10000.0000000000');
-    expect(await reconcileAccount(big, id)).toEqual([]);
+    expect(await reconcileAccount(big, id, NO_TRADING)).toEqual([]);
   });
 
   it('50 parallel multi-leg sells and buys on one account do not deadlock', async () => {
@@ -566,7 +570,7 @@ describe('7. concurrency', () => {
       ),
     );
     expect(results.filter((r) => r.status === 'rejected')).toHaveLength(0);
-    expect(await reconcileAccount(big, id)).toEqual([]);
+    expect(await reconcileAccount(big, id, NO_TRADING)).toEqual([]);
   });
 
   it('100 parallel posts of the same key create exactly one transaction, all return its id', async () => {
@@ -587,7 +591,7 @@ describe('7. concurrency', () => {
     );
     expect(n.rows[0]?.n).toBe('1');
     expect((await balances(id, big))['CASH_USD']).toBe('9900.0000000000');
-    expect(await reconcileAccount(big, id)).toEqual([]);
+    expect(await reconcileAccount(big, id, NO_TRADING)).toEqual([]);
   });
 
   it('the same key with the same legs is a no-op, with different legs throws IdempotencyConflictError', async () => {
@@ -705,7 +709,7 @@ describe('8. property test on Postgres', () => {
               pnl += gross - basis;
             }
           }
-          expect(await reconcileAccount(db.app, id)).toEqual([]);
+          expect(await reconcileAccount(db.app, id, NO_TRADING)).toEqual([]);
           const b = await balances(id);
           expect(b['CASH_USD']).toBe(`${fmtUnits(cash)}00`);
         }
