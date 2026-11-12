@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { QuoteItem } from '@vantage/contracts';
 import { freshness } from '@vantage/market-model';
-import type { InstrumentStatus, MarketState, Quote } from '@vantage/market-model';
+import type { FreshnessState, InstrumentStatus, MarketState, Quote } from '@vantage/market-model';
 import { parse } from '@vantage/money';
 import { CLOCK, QUOTE_STORE } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
@@ -11,6 +11,12 @@ import { CalendarService } from './calendar.service.js';
 import type { QuoteStore } from './quote.store.js';
 
 const price = (p: string): string => parse(p).toCanonicalString();
+
+/** What order execution needs: the shared freshness verdict and the accepted quote behind it (null if none). */
+export interface QuoteSnapshotResult {
+  readonly freshness: FreshnessState;
+  readonly quote: Quote | null;
+}
 
 /**
  * Reads quotes. Freshness comes ONLY from the shared freshness() function. When no valid quote exists the
@@ -25,6 +31,31 @@ export class QuoteService {
     @Inject(CalendarService) private readonly calendars: CalendarService,
     @Inject(FeedInfoService) private readonly feed: FeedInfoService,
   ) {}
+
+  /**
+   * The freshness verdict (from the shared freshness() function only) and the last accepted quote for one
+   * already-resolved instrument, at `now`. UNAVAILABLE carries no quote, so no price can be made up.
+   */
+  async snapshotFor(
+    instrument: { symbol: string; exchange: string; status: string; assetClass: string },
+    now: Date,
+  ): Promise<QuoteSnapshotResult> {
+    const feed = this.feed.get();
+    const quote: Quote | null =
+      (await this.store.get(instrument.symbol.toUpperCase()))?.lastAccepted ?? null;
+    const calendarState = await this.calendars.stateFor(instrument.exchange, now);
+    const result = freshness(
+      quote,
+      instrument.status as InstrumentStatus,
+      { state: calendarState?.state ?? 'CLOSED' },
+      now,
+      { feedEnabled: feed.enabled, assetClass: instrument.assetClass === 'ETF' ? 'ETF' : 'EQUITY' },
+    );
+    if (quote === null || result.state === 'UNAVAILABLE') {
+      return { freshness: 'UNAVAILABLE', quote: null };
+    }
+    return { freshness: result.state, quote };
+  }
 
   /** One answer per requested symbol, in request order. Unknown symbols are reported, never dropped. */
   async getQuotes(symbols: readonly string[]): Promise<QuoteItem[]> {

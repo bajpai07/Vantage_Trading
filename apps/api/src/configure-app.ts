@@ -37,7 +37,7 @@ export function configureApp(app: NestExpressApplication, config: Config, logger
     origin: config.webOrigin,
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['content-type', 'x-request-id'],
+    allowedHeaders: ['content-type', 'x-request-id', 'idempotency-key'],
   });
 
   // JSON bodies are capped at 100 KB.

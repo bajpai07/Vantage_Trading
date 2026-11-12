@@ -19,6 +19,10 @@ export interface Config {
   readonly sessionIdleMinutes: number;
   readonly sessionAbsoluteDays: number;
   readonly cookieSecure: boolean;
+  /** Kill switch (D-30, M4b): false makes every new order a persisted TRADING_PAUSED reject. */
+  readonly tradingEnabled: boolean;
+  /** Orders one user may place per minute (in memory, per process). */
+  readonly orderRateLimitPerMinute: number;
 }
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -114,6 +118,8 @@ const appSchema = z.object({
   SESSION_IDLE_MINUTES: intInRange(1, 10080, 'minutes'),
   SESSION_ABSOLUTE_DAYS: intInRange(1, 90, 'days'),
   COOKIE_SECURE: z.enum(['true', 'false'], { error: 'must be true or false' }),
+  TRADING_ENABLED: z.enum(['true', 'false'], { error: 'must be true or false' }),
+  ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
 });
 
 function dbUser(url: string): string | undefined {
@@ -134,6 +140,11 @@ export function loadConfig(env: Env): Config {
     SESSION_IDLE_MINUTES: env.SESSION_IDLE_MINUTES ?? '480',
     SESSION_ABSOLUTE_DAYS: env.SESSION_ABSOLUTE_DAYS ?? '7',
     COOKIE_SECURE: env.COOKIE_SECURE ?? 'true',
+    // The kill switch defaults to on for local and test only; staging and production must say so explicitly.
+    TRADING_ENABLED:
+      env.TRADING_ENABLED ??
+      (env.APP_ENV === 'local' || env.APP_ENV === 'test' ? 'true' : undefined),
+    ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
   });
   if (!app.success) {
     for (const i of app.error.issues) {
@@ -199,6 +210,8 @@ export function loadConfig(env: Env): Config {
     sessionIdleMinutes: app.data.SESSION_IDLE_MINUTES,
     sessionAbsoluteDays: app.data.SESSION_ABSOLUTE_DAYS,
     cookieSecure: app.data.COOKIE_SECURE === 'true',
+    tradingEnabled: app.data.TRADING_ENABLED === 'true',
+    orderRateLimitPerMinute: app.data.ORDER_RATE_LIMIT_PER_MINUTE,
   };
 }
 

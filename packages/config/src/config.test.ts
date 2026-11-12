@@ -38,6 +38,7 @@ describe('loadConfig', () => {
       APP_ENV: 'production',
       MARKET_DATA_SOURCE: 'PROVIDER',
       COOKIE_SECURE: 'true',
+      TRADING_ENABLED: 'true',
     });
     expect(loadConfig(prod).marketDataSource).toBe('PROVIDER');
     expect(loadConfig(buildTestEnv({ APP_ENV: 'local' })).appEnv).toBe('local');
@@ -175,8 +176,49 @@ describe('M2 application settings', () => {
         APP_ENV: 'production',
         MARKET_DATA_SOURCE: 'PROVIDER',
         COOKIE_SECURE: 'true',
+        TRADING_ENABLED: 'true',
       }),
     );
     expect(prod.cookieSecure).toBe(true);
+  });
+});
+
+describe('M4b trading settings', () => {
+  it('local and test default to trading enabled and 30 orders per minute (control)', () => {
+    for (const appEnv of ['local', 'test']) {
+      const c = loadConfig(buildTestEnv({ APP_ENV: appEnv }));
+      expect([c.tradingEnabled, c.orderRateLimitPerMinute]).toEqual([true, 30]);
+    }
+  });
+  it('reads explicit values', () => {
+    const c = loadConfig(
+      buildTestEnv({ TRADING_ENABLED: 'false', ORDER_RATE_LIMIT_PER_MINUTE: '5' }),
+    );
+    expect([c.tradingEnabled, c.orderRateLimitPerMinute]).toEqual([false, 5]);
+  });
+  it('TRADING_ENABLED must be explicit in staging and production, and is accepted when set (control)', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const base = { APP_ENV: appEnv, MARKET_DATA_SOURCE: 'PROVIDER', COOKIE_SECURE: 'true' };
+      const e = fail(buildTestEnv(base));
+      expect(e.issues.map((i) => i.name)).toContain('TRADING_ENABLED');
+      expect(loadConfig(buildTestEnv({ ...base, TRADING_ENABLED: 'false' })).tradingEnabled).toBe(
+        false,
+      );
+      expect(loadConfig(buildTestEnv({ ...base, TRADING_ENABLED: 'true' })).tradingEnabled).toBe(
+        true,
+      );
+    }
+  });
+  it.each([
+    ['TRADING_ENABLED', 'yes'],
+    ['TRADING_ENABLED', '1'],
+    ['ORDER_RATE_LIMIT_PER_MINUTE', '0'],
+    ['ORDER_RATE_LIMIT_PER_MINUTE', '-1'],
+    ['ORDER_RATE_LIMIT_PER_MINUTE', '100001'],
+    ['ORDER_RATE_LIMIT_PER_MINUTE', 'many'],
+  ])('rejects %s=%s by name without echoing the value', (name, value) => {
+    const e = fail(buildTestEnv({ [name]: value }));
+    expect(e.issues.map((i) => i.name)).toContain(name);
+    expect(e.message).not.toContain(value === '0' || value === '1' ? 'zzz' : value);
   });
 });

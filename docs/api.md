@@ -120,3 +120,121 @@ A user can only see and change their own lists. Another user's list, an unknown 
 | 409  | `WATCHLIST_LIMIT`      | 20 lists per user.                                    |
 | 409  | `WATCHLIST_FULL`       | 100 items per list.                                   |
 | 400  | `ORDER_MISMATCH`       | Item reorder does not list exactly the current items. |
+
+## Orders and positions (M4b)
+
+Market orders only (BUY and SELL, whole shares, USD), filled synchronously (D-30). All routes need a valid session; `POST` also needs the CSRF `Origin` rule. The account is always the session user's MAIN account: **no account id appears in any URL or body**.
+
+| Method and path      | Success                      | Notes                                                                                                                 |
+| -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `POST /v1/orders`    | `201` `OrderResponse`        | Needs the `Idempotency-Key` header. The order is `FILLED` or `REJECTED` (a business reject is **not** an HTTP error). |
+| `GET /v1/orders/:id` | `200` `OrderResponse`        | `404 ORDER_NOT_FOUND` for an unknown id, a malformed id and **another user's order** (never 403).                     |
+| `GET /v1/orders`     | `200 { orders, nextCursor }` | Newest first (`created_at`, then `id`), cursor pagination, filters `status`, `symbol`.                                |
+| `GET /v1/positions`  | `200 { positions }`          | Open positions from the positions cache: `symbol`, `qty`, `avgCost`. No market value and no P&L yet (M5).             |
+
+### POST /v1/orders
+
+Request (exactly these fields; unknown fields such as `accountId`, `price`, `fee` or `now` are `400 VALIDATION_ERROR`):
+
+```http
+POST /v1/orders
+Origin: http://localhost:3000
+Idempotency-Key: 4f0c2d9e-order-0001
+Content-Type: application/json
+Cookie: vantage_session=…
+
+{ "symbol": "AAPL", "side": "BUY", "type": "MARKET", "qty": "10", "referencePrice": "190.00" }
+```
+
+- `symbol`: ticker, case-insensitive. `side`: `BUY` or `SELL`. `type`: `MARKET`.
+- `qty`: a positive whole number, as a JSON integer or a digit string, at most **1,000,000** shares (`MAX_ORDER_QTY`). Floats, zero, negatives, exponents and leading zeros are rejected.
+- `referencePrice`: the price the user saw (the ask for a BUY, the bid for a SELL): a plain decimal string greater than zero, at most 12 integer and 8 decimal digits. A JSON number is rejected. It feeds the 1% price collar (`PRICE_MOVED`).
+- The server decides the account, the instrument, the quote and its freshness, the fee schedule, the kill switch and the time (D-59).
+
+Response `201`:
+
+```json
+{
+  "id": "0198d0d0-…",
+  "symbol": "AAPL",
+  "side": "BUY",
+  "type": "MARKET",
+  "status": "FILLED",
+  "qty": "10",
+  "filledQty": "10",
+  "rejectCode": null,
+  "createdAt": "2026-11-10T15:00:00.000Z",
+  "execution": {
+    "id": "0198d0d0-…",
+    "qty": "10",
+    "price": "190.04",
+    "notional": "1900.40",
+    "fee": "0.00",
+    "slippageBps": "2",
+    "executedAt": "2026-11-10T15:00:00.000Z",
+    "quoteSource": "FIXTURE"
+  }
+}
+```
+
+A rejected order has `status: "REJECTED"`, `filledQty: "0"`, `execution: null` and a `rejectCode`. It is still `201`, it is stored, `GET` returns it, and a replay returns it:
+
+```json
+{
+  "status": "REJECTED",
+  "rejectCode": "INSUFFICIENT_BUYING_POWER",
+  "filledQty": "0",
+  "execution": null
+}
+```
+
+### Idempotency (D-58 and its amendment)
+
+- `Idempotency-Key` is **required**: 8 to 128 characters from `A-Z a-z 0-9 . _ : -`, otherwise `400 IDEMPOTENCY_KEY_INVALID`.
+- The key is also stored as the order's `client_order_id` (amendment to D-58: the body has no `clientOrderId`).
+- Order of checks: look up `(account, key)` first. **Same key and same request** (compared by a SHA-256 of the validated, canonical request, not the raw bytes: `qty` `10` equals `"10"`, price `190` equals `190.00`, key order and symbol case do not matter) returns the **stored response with the same status code and body**; nothing is executed again. **Same key and a different request** is `422 IDEMPOTENCY_MISMATCH` and changes nothing. No row: the order is executed. Stored rows are kept at least 48 hours (the purge job is a later milestone).
+- The idempotency row is written in the **same database transaction** as the order, the ledger entries, the execution and the position. If anything fails, nothing is stored and the retry with the same key runs normally.
+- Keys are per account, so two users may use the same key without colliding or seeing each other's orders.
+- Errors that are not orders (`400`, `404 INSTRUMENT_NOT_FOUND`, `429`, `500`) are not stored, so the same key may be retried.
+- `DUPLICATE_CLIENT_ORDER_ID` (`409`) is an **unreachable guard**: the key row and the order are written together under the account lock, so a second order with the same key cannot exist.
+
+### GET /v1/orders
+
+Query: `limit` (1 to 100, default 50), `cursor` (opaque: pass `nextCursor` unchanged), `status` (`FILLED` or `REJECTED`), `symbol`. Response `{ "orders": [OrderResponse…], "nextCursor": "…" | null }`. The cursor is a position `(created_at, id)`, so orders added between two page reads never cause a duplicate or a skip of orders further down the list. A malformed cursor, limit or filter is `400 VALIDATION_ERROR`.
+
+### GET /v1/positions
+
+```json
+{ "positions": [{ "symbol": "AAPL", "qty": "10", "avgCost": "190.04" }] }
+```
+
+Only positions with a quantity above zero. `avgCost` is the average cost per share of the open lots (fees are not part of cost).
+
+### Business reject codes (`rejectCode`)
+
+First failing rule wins (the order of this list). Details: [trading.md](trading.md).
+
+`TRADING_PAUSED`, `ACCOUNT_NOT_ACTIVE`, `INSTRUMENT_NOT_TRADABLE`, `INSTRUMENT_HALTED`, `QTY_BELOW_MIN`, `QTY_STEP_VIOLATION`, `NO_ELIGIBLE_QUOTE`, `MARKET_CLOSED`, `STALE_QUOTE`, `PRICE_MOVED`, `INSUFFICIENT_BUYING_POWER`, `INSUFFICIENT_POSITION`, `FEE_EXCEEDS_PROCEEDS`.
+
+### Order error codes (HTTP errors)
+
+| HTTP | code                        | When                                                                                                               |
+| ---- | --------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 400  | `VALIDATION_ERROR`          | Body, query or cursor failed validation (names the fields, never the values).                                      |
+| 400  | `IDEMPOTENCY_KEY_INVALID`   | `Idempotency-Key` missing or not 8 to 128 characters of `A-Za-z0-9._:-`.                                           |
+| 401  | `UNAUTHENTICATED`           | No or invalid session.                                                                                             |
+| 403  | `CSRF_REJECTED`             | `Origin` (or `Referer`) is not `WEB_ORIGIN`.                                                                       |
+| 404  | `INSTRUMENT_NOT_FOUND`      | Unknown symbol on `POST /v1/orders`.                                                                               |
+| 404  | `ORDER_NOT_FOUND`           | Unknown, malformed or another user's order id.                                                                     |
+| 404  | `ACCOUNT_NOT_FOUND`         | The user has no MAIN account.                                                                                      |
+| 409  | `DUPLICATE_CLIENT_ORDER_ID` | Unreachable guard (see above).                                                                                     |
+| 422  | `IDEMPOTENCY_MISMATCH`      | Same `Idempotency-Key`, different request.                                                                         |
+| 429  | `RATE_LIMITED`              | More than `ORDER_RATE_LIMIT_PER_MINUTE` (default **30**) order requests per user per minute; `Retry-After` header. |
+| 500  | `INTERNAL_ERROR`            | Unexpected failure: the transaction is rolled back, the body has only a request id.                                |
+
+### Rate limit, audit and the kill switch
+
+- `POST /v1/orders` is limited **per user** (not per IP): 30 per minute by default (`ORDER_RATE_LIMIT_PER_MINUTE`). It reuses the M2 in-memory limiter: counters live in one process (several API processes each count separately; a restart clears them). Every authenticated request counts, replays included. Anonymous requests get 401 first and never touch a user's allowance.
+- Every first placement writes an `audit_logs` row `ORDER_PLACED` (actor, order id, outcome and reject code, request id, IP). Request bodies, cookies and keys are never logged. If the audit insert fails it is logged and swallowed (the order stands), as for the M2 audit events.
+- `TRADING_ENABLED` (config; default `true` for local and test, **must be set explicitly** in staging and production): when `false` every new order is stored as `REJECTED` with `TRADING_PAUSED`.
+- Delayed quotes are executable (`allow_execution_on_delayed` is true in the MVP, TRADING_ENGINE section 3, D-09); `STALE`, `CLOSED` and `UNAVAILABLE` are not.

@@ -5,7 +5,8 @@ import { normalizeEmail } from '@vantage/contracts';
 import type { Logger } from '../../log.js';
 import { LOGGER, POOL } from '../../tokens.js';
 
-export type AuditAction = 'USER_REGISTERED' | 'LOGIN_SUCCEEDED' | 'LOGIN_FAILED' | 'LOGOUT';
+export type AuditAction =
+  'USER_REGISTERED' | 'LOGIN_SUCCEEDED' | 'LOGIN_FAILED' | 'LOGOUT' | 'ORDER_PLACED';
 
 export interface AuditEntry {
   readonly action: AuditAction;
