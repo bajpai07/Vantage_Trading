@@ -210,11 +210,11 @@ export class OrdersService {
     body: PlaceOrderRequest,
     meta: RequestMeta,
   ): Promise<PlacedOrder> {
-    const accountId = await this.accountOf(userId);
     const hash = requestHash(body);
 
-    // 1. Look up (account, key) first. Stored rows never change, so this needs no lock.
-    const earlier = await this.#stored(this.pool, accountId, key, hash);
+    // 1. Resolve the caller's account and look up (account, key) first, in ONE query. Stored rows never change,
+    //    so a hit needs no lock.
+    const { accountId, stored: earlier } = await this.#accountAndStored(userId, key, hash);
     if (earlier !== undefined) return earlier;
 
     // 2. Resolve what the server decides.
@@ -269,7 +269,7 @@ export class OrdersService {
       }
       let result: ExecutionResult;
       try {
-        result = await executeMarketOrder(client, cmd, this.hooks);
+        result = await executeMarketOrder(client, cmd, this.hooks, { accountLocked: true });
       } catch (e) {
         if (e instanceof DuplicateClientOrderIdError || e instanceof ClientOrderIdMismatchError) {
           // Unreachable through HTTP (the key row and the order are written together); kept as a guard.
@@ -359,15 +359,33 @@ export class OrdersService {
     }));
   }
 
-  /** The caller's own MAIN account. There is no account id in any request. */
-  async accountOf(userId: string): Promise<string> {
-    const r = await this.pool.query<{ id: string }>(
-      `SELECT id FROM accounts WHERE user_id = $1::uuid AND kind = 'MAIN'`,
-      [userId],
+  /** The caller's MAIN account and the stored answer for (account, key), if any, in one round trip. */
+  async #accountAndStored(
+    userId: string,
+    key: string,
+    hash: Buffer,
+  ): Promise<{ accountId: string; stored: PlacedOrder | undefined }> {
+    const r = await this.pool.query<{
+      id: string;
+      request_hash: Buffer | null;
+      response_code: number | null;
+      response_body: unknown;
+    }>(
+      `SELECT a.id, k.request_hash, k.response_code, k.response_body
+         FROM accounts a
+         LEFT JOIN idempotency_keys k ON k.account_id = a.id AND k.key = $2
+        WHERE a.user_id = $1::uuid AND a.kind = 'MAIN'`,
+      [userId, key],
     );
-    const id = r.rows[0]?.id;
-    if (id === undefined) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account not found');
-    return id;
+    const row = r.rows[0];
+    if (row === undefined) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account not found');
+    return {
+      accountId: row.id,
+      stored:
+        row.request_hash === null
+          ? undefined
+          : this.#asPlaced(row.request_hash, row.response_code, row.response_body, hash),
+    };
   }
 
   /** The stored answer for (account, key): the same request returns it, a different one is a 422. */
@@ -388,7 +406,17 @@ export class OrdersService {
     );
     const row = r.rows[0];
     if (row === undefined) return undefined;
-    if (!row.request_hash.equals(hash)) {
+    return this.#asPlaced(row.request_hash, row.response_code, row.response_body, hash);
+  }
+
+  /** The same request returns the stored answer; a different one is a 422. */
+  #asPlaced(
+    storedHash: Buffer,
+    code: number | null,
+    responseBody: unknown,
+    hash: Buffer,
+  ): PlacedOrder {
+    if (!storedHash.equals(hash)) {
       throw new AppError(
         422,
         'IDEMPOTENCY_MISMATCH',
@@ -396,8 +424,8 @@ export class OrdersService {
       );
     }
     return {
-      status: row.response_code ?? 201,
-      body: OrderResponse.parse(row.response_body),
+      status: code ?? 201,
+      body: OrderResponse.parse(responseBody),
       replayed: true,
     };
   }

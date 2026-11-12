@@ -112,6 +112,15 @@ export type ExecutionResult =
       readonly rejectCode: RejectCode;
     };
 
+/**
+ * `accountLocked`: the caller already called lock_account_for_order for THIS account in THIS transaction (the HTTP
+ * layer does, to check its idempotency key under the lock), so the lock is not taken a second time. Never set it
+ * without having taken the lock: the lock order account -> CASH -> position -> lots is what serialises an account.
+ */
+export interface ExecuteOptions {
+  readonly accountLocked?: boolean;
+}
+
 /** Test-only seams. Production callers pass nothing. */
 export interface ExecuteHooks {
   /** Runs after the ledger transaction was posted and before the rest of the fill (to prove atomicity). */
@@ -149,11 +158,14 @@ export async function executeMarketOrder(
   client: Queryable,
   cmd: MarketOrderCommand,
   hooks: ExecuteHooks = {},
+  options: ExecuteOptions = {},
 ): Promise<ExecutionResult> {
   // 1. LOCK the account row first, always (via a SECURITY DEFINER function that only locks and returns nothing:
   //    the app role has no UPDATE on accounts, D-55). The status is then read with a NEW statement, so it is the
   //    latest committed state after the wait for the lock.
-  await client.query(`SELECT lock_account_for_order($1::uuid)`, [cmd.accountId]);
+  if (options.accountLocked !== true) {
+    await client.query(`SELECT lock_account_for_order($1::uuid)`, [cmd.accountId]);
+  }
   const acct = await client.query<{ account_status: string; user_status: string }>(
     `SELECT a.status AS account_status, u.status::text AS user_status
        FROM accounts a JOIN users u ON u.id = a.user_id WHERE a.id = $1::uuid`,
@@ -229,33 +241,36 @@ export async function executeMarketOrder(
   try {
     if (decision.decision === 'REJECT') {
       await insertOrder(client, cmd, 'REJECTED', '0', decision.code);
-      await insertEvent(client, cmd.orderId, 1, 'CREATED', created, cmd.now);
-      await insertEvent(
+      await insertEvents(
         client,
         cmd.orderId,
-        2,
-        'REJECTED',
-        {
-          code: decision.code,
-          facts: {
-            freshness: cmd.freshness,
-            quote:
-              cmd.quote === null
-                ? null
-                : {
-                    bid: cmd.quote.bid,
-                    ask: cmd.quote.ask,
-                    ts: cmd.quote.providerTs.toISOString(),
-                    source: cmd.quote.source,
-                    entitlement: cmd.quote.entitlement,
-                  },
-            cash,
-            positionQty,
-            allowExecutionOnDelayed: cmd.allowExecutionOnDelayed,
-            tradingEnabled: cmd.tradingEnabled,
-            accountActive,
+        [
+          { type: 'CREATED', payload: created },
+          {
+            type: 'REJECTED',
+            payload: {
+              code: decision.code,
+              facts: {
+                freshness: cmd.freshness,
+                quote:
+                  cmd.quote === null
+                    ? null
+                    : {
+                        bid: cmd.quote.bid,
+                        ask: cmd.quote.ask,
+                        ts: cmd.quote.providerTs.toISOString(),
+                        source: cmd.quote.source,
+                        entitlement: cmd.quote.entitlement,
+                      },
+                cash,
+                positionQty,
+                allowExecutionOnDelayed: cmd.allowExecutionOnDelayed,
+                tradingEnabled: cmd.tradingEnabled,
+                accountActive,
+              },
+            },
           },
-        },
+        ],
         cmd.now,
       );
       return {
@@ -293,8 +308,19 @@ export async function executeMarketOrder(
     await hooks.afterLedgerPost?.();
 
     await insertOrder(client, cmd, 'FILLED', cmd.qty, null);
-    await insertEvent(client, cmd.orderId, 1, 'CREATED', created, cmd.now);
-    await insertEvent(client, cmd.orderId, 2, 'ACCEPTED', {}, cmd.now);
+    await insertEvents(
+      client,
+      cmd.orderId,
+      [
+        { type: 'CREATED', payload: created },
+        { type: 'ACCEPTED', payload: {} },
+        {
+          type: 'FILLED',
+          payload: { executionId, price, qty: cmd.qty, ledgerTxId: posted.transactionId },
+        },
+      ],
+      cmd.now,
+    );
     await client.query(
       `INSERT INTO executions (id, order_id, account_id, instrument_id, seq, side, qty, price, currency, fee_local,
                                gross_usd, fee_usd, slippage_bps, quote_bid, quote_ask, quote_last, quote_ts,
@@ -384,15 +410,6 @@ export async function executeMarketOrder(
       ],
     );
 
-    await insertEvent(
-      client,
-      cmd.orderId,
-      3,
-      'FILLED',
-      { executionId, price, qty: cmd.qty, ledgerTxId: posted.transactionId },
-      cmd.now,
-    );
-
     return {
       outcome: 'FILLED',
       replayed: false,
@@ -473,18 +490,19 @@ async function insertOrder(
   );
 }
 
-async function insertEvent(
+/** Inserts the order's events in one statement; `seq` is 1, 2, 3 ... in the given order (contiguous). */
+async function insertEvents(
   client: Queryable,
   orderId: string,
-  seq: number,
-  type: string,
-  payload: unknown,
+  events: ReadonlyArray<{ type: string; payload: unknown }>,
   at: Date,
 ): Promise<void> {
   await client.query(
     `INSERT INTO order_events (order_id, seq, type, payload, created_at)
-     VALUES ($1::uuid, $2::int, $3, $4::jsonb, $5)`,
-    [orderId, seq, type, JSON.stringify(payload), at],
+     SELECT $1::uuid, t.ord::int, t.type, t.payload, $4
+       FROM unnest($2::text[], $3::jsonb[]) WITH ORDINALITY AS t(type, payload, ord)
+      ORDER BY t.ord`,
+    [orderId, events.map((e) => e.type), events.map((e) => JSON.stringify(e.payload)), at],
   );
 }
 
