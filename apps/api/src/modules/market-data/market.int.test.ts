@@ -417,7 +417,12 @@ describe('4. FIXTURE guards', () => {
   });
 
   it('the startup guard refuses to boot in staging when a fixture instrument exists', async () => {
-    const staging = { APP_ENV: 'staging', MARKET_DATA_SOURCE: 'PROVIDER', COOKIE_SECURE: 'true' };
+    const staging = {
+      APP_ENV: 'staging',
+      MARKET_DATA_SOURCE: 'PROVIDER',
+      COOKIE_SECURE: 'true',
+      TRADING_ENABLED: 'true',
+    };
     // this database holds FIXTURE instruments (synced by the first harness)
     await expect(createHarness(db, { env: staging })).rejects.toThrow(/FIXTURE instruments/);
     // control: a clean database passes the guard and then stops only because no provider adapter exists yet
