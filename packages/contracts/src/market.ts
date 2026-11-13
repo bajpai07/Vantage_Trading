@@ -135,3 +135,19 @@ export type CreateWatchlistRequest = z.output<typeof CreateWatchlistRequest>;
 export type UpdateWatchlistRequest = z.output<typeof UpdateWatchlistRequest>;
 export type AddWatchlistItemRequest = z.output<typeof AddWatchlistItemRequest>;
 export type ReorderWatchlistItemsRequest = z.output<typeof ReorderWatchlistItemsRequest>;
+
+// ---- data feed (public) ---------------------------------------------------------------------------------
+
+/**
+ * GET /v1/market/feed (no session needed): which market data source is active, so a client can say so honestly
+ * (for example the "Simulated market data" banner while the source is FIXTURE). Carries no user data.
+ */
+export const FeedInfoResponse = z.strictObject({
+  /** Label of the active data source, e.g. FIXTURE. */
+  source: z.string().min(1),
+  entitlement: Entitlement,
+  delaySeconds: z.number().int().min(0),
+  /** false when the feed kill switch is on: quotes are then UNAVAILABLE. */
+  enabled: z.boolean(),
+});
+export type FeedInfoResponse = z.output<typeof FeedInfoResponse>;

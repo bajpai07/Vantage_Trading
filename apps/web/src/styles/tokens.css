@@ -1,0 +1,47 @@
+/* VANTAGE design tokens (DESIGN_SYSTEM sections 2 to 4). The ONLY place raw colour values live: components use the
+   variables (a test and a lint rule reject raw hex anywhere else). Dark theme only: the product is dark. */
+:root {
+  color-scheme: dark;
+
+  /* surfaces (navy-black ramp) */
+  --bg-0: #070a12;
+  --bg-1: #0b1020;
+  --bg-2: #10172a;
+  --bg-3: #16203a;
+  --bg-4: #1d2a4a;
+  --line: #1e2845;
+  --line-strong: #2b3862;
+
+  /* text */
+  --text-0: #f2f5fb;
+  --text-1: #c3cce0;
+  --text-2: #8591ad;
+  --text-3: #5f6b88;
+
+  /* accents and semantics */
+  --accent: #3d7bff;
+  --accent-hi: #6a9bff;
+  --violet: #8b6cff;
+  --up: #27c28a;
+  --up-bg: rgba(39, 194, 138, 0.14);
+  --down: #f2566b;
+  --down-bg: rgba(242, 86, 107, 0.14);
+  --warn: #e8b24a;
+  --stale: #e8884a;
+  --info: #4bb5e8;
+
+  /* typography */
+  --font-ui: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-num:
+    'JetBrains Mono Variable', 'JetBrains Mono', ui-monospace, 'Cascadia Mono', Consolas, monospace;
+
+  /* shape and elevation (no radius above 8px; shadows only for overlays) */
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 6px;
+  --shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.45);
+
+  /* layout */
+  --topbar-h: 40px;
+  --row-h: 28px;
+}

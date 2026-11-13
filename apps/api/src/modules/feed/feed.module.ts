@@ -1,4 +1,5 @@
-import { Inject, Injectable, Module } from '@nestjs/common';
+import { Controller, Get, Inject, Injectable, Module } from '@nestjs/common';
+import { FeedInfoResponse } from '@vantage/contracts';
 import type { Config } from '@vantage/config';
 import type { Entitlement } from '@vantage/market-model';
 import type { Clock } from '../../tokens.js';
@@ -40,11 +41,23 @@ export class FeedInfoService {
   }
 }
 
+/** Public: which data source is active. No session is needed (the login page shows the source too). */
+@Controller('v1/market')
+export class FeedController {
+  constructor(@Inject(FeedInfoService) private readonly feed: FeedInfoService) {}
+
+  @Get('feed')
+  info(): FeedInfoResponse {
+    return FeedInfoResponse.parse(this.feed.get());
+  }
+}
+
 /**
  * The provider factory: FIXTURE builds the FixtureProvider (which itself refuses staging/production);
  * PROVIDER has no adapter yet (M3b), so the provider is null and the startup step reports it clearly.
  */
 @Module({
+  controllers: [FeedController],
   providers: [
     {
       provide: PROVIDER,

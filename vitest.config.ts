@@ -22,6 +22,8 @@ const alias = [
 ];
 
 export default defineConfig({
+  // the web app's component tests render JSX on the server (react-dom/server), no browser needed
+  esbuild: { jsx: 'automatic' },
   resolve: { alias },
   test: {
     projects: [
@@ -31,7 +33,7 @@ export default defineConfig({
           name: 'unit',
           // The ESLint-based guard tests load the whole flat config on first use, which can take several seconds cold.
           testTimeout: 30_000,
-          include: ['{apps,packages,tools}/**/*.test.ts'],
+          include: ['{apps,packages,tools}/**/*.test.{ts,tsx}'],
           exclude: ['**/node_modules/**', '**/dist/**', '**/*.int.test.ts'],
         },
       },

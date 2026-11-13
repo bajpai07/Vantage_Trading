@@ -105,7 +105,19 @@ export const determinismGuardRules = {
 };
 
 export default tseslint.config(
-  { ignores: ['**/dist/**', '**/node_modules/**', '**/coverage/**', '**/.turbo/**', 'docs/**'] },
+  {
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      '**/coverage/**',
+      '**/.turbo/**',
+      '**/.next/**',
+      '**/next-env.d.ts',
+      '**/playwright-report/**',
+      '**/test-results/**',
+      'docs/**',
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.recommended,
   {
@@ -136,6 +148,60 @@ export default tseslint.config(
                 'import LedgerService from ledger.service.js instead of reaching into the repository',
             },
           ],
+        },
+      ],
+    },
+  },
+  {
+    // The web app runs in the browser and on the Next server. Raw hex colours live in tokens.css only (DESIGN_SYSTEM
+    // section 10): components use token classes and variables.
+    files: ['apps/web/**/*.{ts,tsx}'],
+    ignores: ['**/*.test.{ts,tsx}', 'apps/web/e2e/**'],
+    languageOptions: { globals: { ...globals.browser, ...globals.node } },
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\\b/]',
+          message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
+        },
+        {
+          selector: 'TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\\b/]',
+          message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
+        },
+      ],
+    },
+  },
+  {
+    // Money is shown exactly as the API sent it: no number conversion and no arithmetic in the display helpers.
+    files: ['apps/web/src/lib/money.ts', 'apps/web/src/lib/format.ts'],
+    ignores: ['**/*.test.ts'],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: "CallExpression[callee.name='parseFloat']",
+          message: 'web money: parseFloat is banned',
+        },
+        {
+          selector: "CallExpression[callee.name='parseInt']",
+          message: 'web money: parseInt is banned',
+        },
+        {
+          selector: "CallExpression[callee.name='Number']",
+          message: 'web money: Number(...) is banned',
+        },
+        {
+          selector: "MemberExpression[object.name='Math']",
+          message: 'web money: Math.* is banned',
+        },
+        {
+          selector: 'Literal[value=type(number)][raw=/[.eE]/]',
+          message: 'web money: decimal or exponent literals are banned',
+        },
+        {
+          selector: "UnaryExpression[operator='+']",
+          message: 'web money: unary + (number conversion) is banned',
         },
       ],
     },

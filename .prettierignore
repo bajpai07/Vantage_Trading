@@ -6,3 +6,7 @@ pnpm-lock.yaml
 *.tsbuildinfo
 docs/specs
 docs/prompts
+.next
+next-env.d.ts
+test-results
+playwright-report

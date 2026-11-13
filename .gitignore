@@ -7,3 +7,9 @@ coverage
 .env.*
 !.env.example
 !.env.infra.example
+
+# web app
+.next
+next-env.d.ts
+test-results
+playwright-report
