@@ -13,6 +13,7 @@ import { formatMoney, formatPrice, formatQty } from '../lib/money';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
 import { useQuotePoll } from '../lib/use-quote-poll';
+import { OrderTicket } from './order-ticket';
 import { QuotePanel } from './quote-panel';
 import { Alert, EmptyState } from './ui';
 
@@ -184,7 +185,13 @@ export function InstrumentView(props: {
           <PositionPanel symbol={instrument.symbol} position={props.position} />
           <RecentOrders symbol={instrument.symbol} orders={props.orders} />
         </div>
-        <div data-testid="ticket-slot" />
+        <OrderTicket
+          instrument={instrument}
+          quote={poll.quote}
+          refreshFailed={poll.refreshFailed}
+          refreshQuote={poll.refreshNow}
+          position={props.position}
+        />
       </div>
     </div>
   );

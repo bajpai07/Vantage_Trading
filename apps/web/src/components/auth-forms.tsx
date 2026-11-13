@@ -31,7 +31,7 @@ function describedBy(id: string, errors: FieldErrors, hint = false): string | un
   return ids.length === 0 ? undefined : ids.join(' ');
 }
 
-export function LoginForm({ notice }: { notice: string | null }) {
+export function LoginForm({ notice, returnTo }: { notice: string | null; returnTo: string }) {
   const router = useRouter();
   const s = useFormState();
 
@@ -51,7 +51,7 @@ export function LoginForm({ notice }: { notice: string | null }) {
     s.setSubmitting(true);
     const r = await clientRequest('POST', '/v1/auth/login', MeResponse, { body: checked.data });
     if (r.ok) {
-      router.replace('/portfolio');
+      router.replace(returnTo);
       router.refresh();
       return; // stay disabled until the navigation completes
     }

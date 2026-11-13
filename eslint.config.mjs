@@ -174,7 +174,12 @@ export default tseslint.config(
   },
   {
     // Money is shown exactly as the API sent it: no number conversion and no arithmetic in the display helpers.
-    files: ['apps/web/src/lib/money.ts', 'apps/web/src/lib/format.ts'],
+    files: [
+      'apps/web/src/lib/money.ts',
+      'apps/web/src/lib/format.ts',
+      'apps/web/src/lib/ticket.ts',
+      'apps/web/src/components/order-ticket.tsx',
+    ],
     ignores: ['**/*.test.ts'],
     rules: {
       'no-restricted-syntax': [

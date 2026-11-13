@@ -16,16 +16,21 @@ export interface QuotePoll {
   readonly refreshFailed: boolean;
   /** Counts successful refreshes (lets a consumer react to a new quote). */
   readonly version: number;
+  /** Refresh now (for example right after a rejected order, to show the current price). */
+  readonly refreshNow: () => void;
 }
+
+type PollState = Omit<QuotePoll, 'refreshNow'>;
 
 export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number): QuotePoll {
   const router = useRouter();
-  const [state, setState] = useState<QuotePoll>({
+  const [state, setState] = useState<PollState>({
     quote: initial,
     refreshFailed: false,
     version: 0,
   });
   const failures = useRef(0);
+  const refreshRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     let cancelled = false;
@@ -65,6 +70,7 @@ export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number)
         void refresh(); // catch up at once when the tab comes back
       }
     };
+    refreshRef.current = () => void refresh();
     schedule();
     document.addEventListener('visibilitychange', onVisibility);
     return () => {
@@ -74,5 +80,5 @@ export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number)
     };
   }, [symbol, pollMs, router]);
 
-  return state;
+  return { ...state, refreshNow: () => refreshRef.current() };
 }
