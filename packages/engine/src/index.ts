@@ -144,3 +144,4 @@ export function sellFillLegs(input: SellFillInput): Leg[] {
 export * from './errors.js';
 export * from './lots.js';
 export * from './market-order.js';
+export * from './valuation.js';

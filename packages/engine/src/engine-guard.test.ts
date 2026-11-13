@@ -51,6 +51,7 @@ describe('engine determinism guard (ESLint)', () => {
       'packages/engine/src/errors.ts',
       'packages/engine/src/lots.ts',
       'packages/engine/src/market-order.ts',
+      'packages/engine/src/valuation.ts',
       'packages/money/src/index.ts',
     ]);
     expect(results.flatMap((r) => r.messages)).toEqual([]);
