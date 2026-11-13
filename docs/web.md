@@ -1,6 +1,6 @@
-# Web app (M6a): foundation, auth and the portfolio screens
+# Web app (M6a, M6b): foundation, portfolio screens, search, instrument page and order ticket
 
-`apps/web` is a Next.js (App Router) app: register, sign in, sign out, and read-only screens for the portfolio, orders, fills and account activity. **No trade ticket, instrument search or price charts yet (M6b).** Decisions D-64 to D-68 are in specs/DECISIONS.md; the API it uses is in [api.md](api.md); the definitions behind the numbers are in [portfolio.md](portfolio.md).
+`apps/web` is a Next.js (App Router) app: register, sign in, sign out, and read-only screens for the portfolio, orders, fills and account activity. From M6b it also has header search, the instrument page and a market-order ticket. **No watchlist screens and no price charts yet.** Decisions D-64 to D-68 (M6a) and D-69 to D-73 (M6b) are in specs/DECISIONS.md; the API it uses is in [api.md](api.md); the definitions behind the numbers are in [portfolio.md](portfolio.md).
 
 ## Structure
 
@@ -18,13 +18,20 @@ apps/web/
       (auth)/login, register  forms (client components)
       (app)/layout.tsx      private layout: checks the session on the server, header, nav, sign out
       (app)/portfolio, orders, activity   server-rendered first paint, loading.tsx, error.tsx
-    components/             FreshnessBadge, Money, PnlCell, EquityLine, PortfolioView, OrdersList, ...
+      (app)/instruments/[symbol]   instrument page (M6b); not-found.tsx for unknown symbols
+    instrumentation-client.ts   runs first in the browser: turns off zod's `new Function` probe (the CSP has no unsafe-eval)
+    components/             FreshnessBadge, Money, PnlCell, EquityLine, PortfolioView, OrdersList, SearchBox,
+                            QuotePanel, InstrumentView, OrderTicket, ...
     lib/
       config.ts             validated configuration (API_BASE_URL, PORTFOLIO_POLL_MS, APP_ENV)
       api-core.ts           interprets every API response: validated against @vantage/contracts or a safe failure
       server-api.ts, client-api.ts  server and browser access (the browser only ever calls /api/*)
       money.ts, format.ts   string-only display helpers (no number conversion)
       freshness.ts, reject-copy.ts  freshness labels and the plain sentence for every reject code
+      market.ts             instrument status views (what each status blocks), "x s ago", market line
+      use-quote-poll.ts, backoff.ts  quote polling (D-73)
+      ticket.ts             the order ticket as a pure state machine + disabled reasons (D-72)
+      return-to.ts          safe "come back after sign in" paths
       csp.ts, upstream.ts   CSP builder; proxy path allowlist and header filtering
     styles/tokens.css       the design tokens (the only place raw colours live)
 ```
@@ -44,11 +51,13 @@ pnpm --filter web dev
 
 `pnpm --filter web build` and `pnpm --filter web start` serve the production build. Configuration (names, never values, are reported when it is wrong):
 
-| Variable            | Meaning                                                                                                                                                                        |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `API_BASE_URL`      | Origin of the API (no path, no trailing slash). Default `http://127.0.0.1:4000` in local and test; **required** when `APP_ENV` is staging or production. Read at request time. |
-| `APP_ENV`           | `local` (default), `test`, `staging`, `production`.                                                                                                                            |
-| `PORTFOLIO_POLL_MS` | Portfolio refresh interval while the tab is visible, 1000 to 300000 (default 15000).                                                                                           |
+| Variable              | Meaning                                                                                                                                                                                                                                       |
+| --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `API_BASE_URL`        | Origin of the API (no path, no trailing slash). Default `http://127.0.0.1:4000` in local and test; **required** when `APP_ENV` is staging or production. Read at request time.                                                                |
+| `APP_ENV`             | `local` (default), `test`, `staging`, `production`.                                                                                                                                                                                           |
+| `PORTFOLIO_POLL_MS`   | Portfolio refresh interval while the tab is visible, 1000 to 300000 (default 15000).                                                                                                                                                          |
+| `QUOTE_POLL_MS`       | Instrument quote refresh interval while the tab is visible, 1000 to 60000 (default 5000). D-73.                                                                                                                                               |
+| `TRUST_FORWARDED_FOR` | Whether the proxy route forwards the browser's `X-Forwarded-For` to the API (default true in local and test; **required** in staging and production). Set it to true only when this app sits behind a proxy that overwrites the header. D-69. |
 
 `pnpm verify` now includes the web app: format check, ESLint, `tsc` (via `next typegen`), `next build`, and the unit tests (`apps/web/**/*.test.{ts,tsx}`, rendered on the server with `react-dom/server`, no browser).
 
@@ -61,10 +70,42 @@ pnpm install --frozen-lockfile
 pnpm db:up ; pnpm db:migrate
 pnpm --filter web exec playwright install chromium      # once: downloads the browser (about 120 MB)
 pnpm --filter web build                                  # the e2e server runs the production build
-pnpm --filter web test:e2e                               # 33 tests, about 1.5 minutes
+pnpm --filter web test:e2e                               # 69 tests, about 3 minutes
 ```
 
-Ports used (so a running dev server is not disturbed): web 3100, API 4100, control 4101. The run creates one `t_*` database and drops it at the end (`pnpm test:cleanup` removes strays after a crash). Failure traces and screenshots go to `apps/web/test-results/` (git-ignored); the screenshots in `docs/phase-reports/m6a/` are written by the specs.
+Ports used (so a running dev server is not disturbed): web 3100, API 4100, control 4101. The run creates one `t_*` database and drops it at the end (`pnpm test:cleanup` removes strays after a crash). Failure traces and screenshots go to `apps/web/test-results/` (git-ignored); the screenshots in `docs/phase-reports/m6a/` and `m6b/` are written by the specs. The test API also has two test-only control endpoints, `POST /reconcile` (the API's own zero-tolerance reconciliation) and `POST /counts` (orders and executions of a user), used to prove "exactly one order" and clean books.
+
+## Search, instrument page and order ticket (M6b)
+
+**Search** (header, every private page): type to search `/v1/instruments/search` (250 ms debounce, newest answer wins); `/` focuses the box, Up/Down/Enter choose, Escape closes then clears. Each result shows symbol, name, exchange, type and a badge when the instrument is not ACTIVE. "No results" is a normal answer worded as one; a failed search says so and offers "Try again".
+
+**Instrument page** (`/instruments/AAPL`): name, symbol, exchange, status (HALTED, SELL_ONLY and DELISTED are explained in a sentence), the quote panel (bid, ask, last and the server-computed spread as strings, freshness badge, source, as-of in UTC and "x s ago", the exchange's open/closed line from `/v1/market/status`), your position in this symbol, your recent orders in it, and the ticket. An unknown or malformed symbol shows the not-found page (the HTTP status stays 200 because the loading state streams first; the page is marked `noindex`). The quote refreshes itself (D-73).
+
+**Order ticket** (market orders, whole shares only):
+
+1. Choose Buy or Sell and type a quantity. The field takes digits only (letters, signs, decimals and exponents never get in; a paste that is not only digits is refused) and at most the contract maximum.
+2. After 300 ms the ticket asks `POST /v1/orders/preview` and shows the estimate: estimated price, cost or value, fee, estimated proceeds (sell) and cash after, labelled "Estimate — final price is decided when the order executes." The estimate is the server's; the browser adds nothing up.
+3. **Review** opens a modal dialog: side, quantity, estimated price, cost, fee, cash after, the quote's time and source. Confirm reads "Buy 10 AAPL" or "Sell 4 AAPL". The estimate is frozen while you review.
+4. **Confirm** sends `POST /v1/orders`. A fill shows price, quantity, value, fee and cash now (from `/v1/account`) and a link to Orders; the position and recent orders on the page update without a reload. A reject shows the plain sentence for its code and says nothing was changed. `PRICE_MOVED` also shows the current price and offers "Review again": nothing is resubmitted automatically (D-71).
+
+**A disabled button always says why**, in this order: request in flight; instrument status (HALTED blocks both sides, SELL_ONLY blocks buying, DELISTED both); quote UNAVAILABLE, CLOSED or STALE; no bid or ask; a failed price refresh; no quantity; quantity above the maximum; selling with no position; the estimate still calculating or failed; and finally the reject sentence of whatever the preview says would happen (not enough cash, not enough shares, trading paused, and so on).
+
+### Idempotency key lifecycle (D-72)
+
+| Event                                               | Key                                                                                                                                              |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Review opened                                       | a new key (`crypto.randomUUID()`), kept in memory only                                                                                           |
+| Network error, timeout, 5xx, 429, unreadable answer | **kept**: "Retry safely" resends with the same key; the dialog says the order may or may not have been placed and links to Orders                |
+| Fill, reject, or a 4xx answer                       | discarded                                                                                                                                        |
+| Edit side or quantity, or cancel the review         | discarded (the review closes and the estimate is dropped)                                                                                        |
+| Second click while a request is in flight           | nothing happens (a synchronous guard, not only a disabled button)                                                                                |
+| 401                                                 | the user is sent to sign in and returned to the same instrument page (only a short list of our own paths is ever accepted as the return address) |
+
+The state machine is `lib/ticket.ts` (pure, unit-tested); `components/order-ticket.tsx` only renders it.
+
+### Keyboard, focus and motion
+
+Everything works with the keyboard: `/` to search, Enter to review and to confirm. The dialogs are native `<dialog>` elements opened with `showModal()`: focus moves to the dialog heading, Tab stays inside, Escape closes, and results are announced (`aria-live`). Buttons are 44 px high on a phone. Pulses respect `prefers-reduced-motion`.
 
 ## Honesty rules (and where each is enforced)
 
@@ -112,6 +153,9 @@ Labelled fields with inline errors tied by `aria-invalid` and `aria-describedby`
 
 ## Known limits
 
-- Tables scroll sideways on a phone instead of turning into two-line cards (DESIGN_SYSTEM section 5); cards come with the terminal layout in M6b.
-- The API sees every web user as the proxy's address, so its per-IP login and registration limits are shared by all web users until a trusted-proxy setting exists (api.md, rate limits).
+- Tables scroll sideways on a phone instead of turning into two-line cards (DESIGN_SYSTEM section 5); the terminal layout is not built.
+- Shared per-IP limits are fixed by the trusted-proxy setting (D-69, api.md): set `TRUSTED_PROXY_CIDRS` on the API and `TRUST_FORWARDED_FOR` on the web app in staging and production.
+- No watchlist screens and no charts (they need M3b data). Limit and stop orders, fractional shares and streaming prices are out of scope.
+- The idempotency key is memory-only: reloading the page during an uncertain order loses it, and the dialog points the user to the Orders page to check.
+- Not-found instrument pages answer HTTP 200 (the streamed loading state commits the status first); they are marked `noindex`.
 - No Storybook, visual regression or Lighthouse budget yet (DESIGN_SYSTEM section 10); the e2e suite is not in CI.
