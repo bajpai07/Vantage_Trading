@@ -1,8 +1,27 @@
 import type { Metadata } from 'next';
+import { redirect } from 'next/navigation';
+import { PortfolioHistoryResponse, PortfolioResponse } from '@vantage/contracts';
+import { LoadError } from '../../../components/load-error';
+import { PortfolioView } from '../../../components/portfolio-view';
+import { getWebConfig } from '../../../lib/config';
+import { serverGet } from '../../../lib/server-api';
 
 export const metadata: Metadata = { title: 'Portfolio' };
 
-// Placeholder until the portfolio screen (T3); the session is already enforced by the (app) layout.
-export default function PortfolioPage() {
-  return <h1 className="text-[20px] font-semibold text-text-0">Portfolio</h1>;
+export default async function PortfolioPage() {
+  const [portfolio, history] = await Promise.all([
+    serverGet('/v1/portfolio', PortfolioResponse),
+    serverGet('/v1/portfolio/history', PortfolioHistoryResponse),
+  ]);
+  if (!portfolio.ok) {
+    if (portfolio.kind === 'unauthenticated') redirect('/login?reason=expired');
+    return <LoadError failure={portfolio} what="Portfolio" />;
+  }
+  return (
+    <PortfolioView
+      initial={portfolio.data}
+      history={history.ok ? history.data.snapshots : null}
+      pollMs={getWebConfig().portfolioPollMs}
+    />
+  );
 }

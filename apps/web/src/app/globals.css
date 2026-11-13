@@ -57,6 +57,12 @@ a {
 a:hover {
   color: var(--accent-hi);
 }
+/* A link inside running text is told apart by more than colour (WCAG 1.4.1): it is underlined. */
+p a,
+li a:not([class]) {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 /* Keyboard focus is always visible: 2px accent ring (DESIGN_SYSTEM section 8). */
 :focus-visible {
