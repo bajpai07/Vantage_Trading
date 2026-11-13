@@ -1,6 +1,13 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
-import { CalendarError, marketState, parseCalendar } from './calendar.js';
+import {
+  CalendarError,
+  exchangeDate,
+  marketState,
+  nextDate,
+  parseCalendar,
+  sessionsBetween,
+} from './calendar.js';
 import { NYSE_CALENDAR_2026_2027 as CAL } from './testing.js';
 
 const at = (iso: string) => marketState(CAL, new Date(iso));
@@ -252,5 +259,57 @@ describe('properties', () => {
       }),
       { numRuns: 500 },
     );
+  });
+});
+
+describe('sessionsBetween (the equity snapshot job)', () => {
+  const dates = (from: string, to: string) => sessionsBetween(CAL, from, to).map((s) => s.date);
+
+  it('lists only trading days: weekends and holidays are skipped (Thanksgiving week 2026)', () => {
+    // Mon 23, Tue 24, Wed 25, Thu 26 = Thanksgiving (closed), Fri 27 = early close, Sat 28, Sun 29, Mon 30
+    expect(dates('2026-11-23', '2026-11-30')).toEqual([
+      '2026-11-23',
+      '2026-11-24',
+      '2026-11-25',
+      '2026-11-27',
+      '2026-11-30',
+    ]);
+    // control: an ordinary week has five sessions
+    expect(dates('2026-11-09', '2026-11-13')).toHaveLength(5);
+  });
+
+  it('a regular session is 09:30 to 16:00 New York (EST = UTC-5 in November); the early close is 13:00', () => {
+    const [tue] = sessionsBetween(CAL, '2026-11-10', '2026-11-10');
+    expect(tue).toMatchObject({ date: '2026-11-10', kind: 'REGULAR', note: null });
+    expect(tue?.open.toISOString()).toBe('2026-11-10T14:30:00.000Z');
+    expect(tue?.close.toISOString()).toBe('2026-11-10T21:00:00.000Z');
+    const [fri] = sessionsBetween(CAL, '2026-11-27', '2026-11-27');
+    expect(fri).toMatchObject({ kind: 'EARLY_CLOSE', note: 'Day after Thanksgiving' });
+    expect(fri?.close.toISOString()).toBe('2026-11-27T18:00:00.000Z');
+  });
+
+  it('follows daylight saving: the same 16:00 close is 20:00Z in summer', () => {
+    const [s] = sessionsBetween(CAL, '2026-07-01', '2026-07-01');
+    expect(s?.close.toISOString()).toBe('2026-07-01T20:00:00.000Z');
+  });
+
+  it('dates outside the coverage have no session (never guessed); an inverted range is empty; an absurd range is refused', () => {
+    expect(dates('2025-01-02', '2025-01-03')).toEqual([]);
+    expect(dates('2026-11-13', '2026-11-12')).toEqual([]);
+    expect(() => sessionsBetween(CAL, '2026-01-01', '2029-01-01')).toThrow(CalendarError);
+  });
+
+  it('agrees with marketState: the market is OPEN just before each close and CLOSED at it', () => {
+    for (const s of sessionsBetween(CAL, '2026-11-23', '2026-12-04')) {
+      expect(marketState(CAL, new Date(s.close.getTime() - 1)).state).toBe('OPEN');
+      expect(marketState(CAL, s.close).state).toBe('CLOSED');
+      expect(exchangeDate(CAL, s.close)).toBe(s.date);
+    }
+  });
+
+  it('nextDate and exchangeDate', () => {
+    expect(nextDate('2026-11-30')).toBe('2026-12-01');
+    expect(nextDate('2026-12-31')).toBe('2027-01-01');
+    expect(exchangeDate(CAL, new Date('2026-11-11T03:00:00Z'))).toBe('2026-11-10'); // 22:00 the evening before in New York
   });
 });

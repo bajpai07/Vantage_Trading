@@ -13,6 +13,7 @@ import { SessionGuard, SessionModule } from '../auth/session.guard.js';
 import { MarketDataModule } from '../market-data/market-data.module.js';
 import { HistoryService } from './history.service.js';
 import { PortfolioService } from './portfolio.service.js';
+import { SnapshotScheduler, SnapshotService } from './snapshot.service.js';
 
 /** The account is always the session user's own MAIN account: there is no account id in any request. */
 const userOf = (req: AppRequest): string => {
@@ -66,7 +67,7 @@ export class HistoryController {
 @Module({
   imports: [SessionModule, MarketDataModule],
   controllers: [PortfolioController, HistoryController],
-  providers: [PortfolioService, HistoryService],
-  exports: [PortfolioService],
+  providers: [PortfolioService, HistoryService, SnapshotService, SnapshotScheduler],
+  exports: [PortfolioService, SnapshotService],
 })
 export class PortfolioModule {}

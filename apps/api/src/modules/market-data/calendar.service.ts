@@ -49,6 +49,11 @@ export class CalendarService {
     return entry === undefined ? undefined : marketState(entry.calendar, now);
   }
 
+  /** The validated calendar of one exchange (loaded on first use); undefined for an unknown exchange code. */
+  async get(mic: string): Promise<Calendar | undefined> {
+    return (await this.#loaded()).get(mic)?.calendar;
+  }
+
   async statusAll(now: Date): Promise<ExchangeStatus[]> {
     return [...(await this.#loaded()).entries()].map(([code, e]) => ({
       exchange: code,

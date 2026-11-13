@@ -67,6 +67,6 @@ export class MarketController {
     MarketRefresher,
     MarketStartup,
   ],
-  exports: [QuoteService, QuoteIngest, CalendarService, MarketRefresher],
+  exports: [QUOTE_STORE, QuoteService, QuoteIngest, CalendarService, MarketRefresher],
 })
 export class MarketDataModule {}

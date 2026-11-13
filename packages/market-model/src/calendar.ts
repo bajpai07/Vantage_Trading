@@ -302,3 +302,57 @@ export function marketState(calendar: Calendar, instant: Date): MarketState {
     nextClose: new Date(close),
   };
 }
+
+// ---- sessions in a date range (M5: the equity snapshot job) -----------------------------------------------
+
+export interface TradingSession {
+  /** The exchange-local trading date (YYYY-MM-DD). */
+  readonly date: string;
+  readonly open: Date;
+  readonly close: Date;
+  readonly kind: SessionKind;
+  /** Early-close name when relevant. */
+  readonly note: string | null;
+}
+
+/** The longest date range `sessionsBetween` accepts (a guard against an accidental unbounded loop). */
+export const MAX_SESSION_RANGE_DAYS = 800;
+
+/** The exchange-local calendar date of an instant. */
+export function exchangeDate(calendar: Calendar, instant: Date): string {
+  return localDateOf(calendar.timezone, instant.getTime());
+}
+
+/** The date after `date` (both YYYY-MM-DD). */
+export function nextDate(date: string): string {
+  return addDays(date, 1);
+}
+
+/**
+ * The trading sessions on the local dates from `fromDate` to `toDate` inclusive, oldest first, with early closes
+ * applied. Weekends, holidays and dates outside the calendar's coverage have no session (the calendar is never
+ * guessed outside its coverage).
+ */
+export function sessionsBetween(
+  calendar: Calendar,
+  fromDate: string,
+  toDate: string,
+): TradingSession[] {
+  const out: TradingSession[] = [];
+  let date = fromDate;
+  for (let i = 0; date <= toDate; i += 1) {
+    if (i > MAX_SESSION_RANGE_DAYS) throw new CalendarError('session range is too long');
+    const plan = planFor(calendar, date);
+    if (plan.kind === 'SESSION') {
+      out.push({
+        date,
+        open: new Date(zonedToUtcMs(calendar.timezone, date, plan.open)),
+        close: new Date(zonedToUtcMs(calendar.timezone, date, plan.close)),
+        kind: plan.session,
+        note: plan.note,
+      });
+    }
+    date = addDays(date, 1);
+  }
+  return out;
+}
