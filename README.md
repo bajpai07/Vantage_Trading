@@ -29,7 +29,7 @@ pnpm db:down
 
 ```bash
 pnpm build
-node --env-file=.env apps/api/dist/main.js         # serves on http://127.0.0.1:3000
+node --env-file=.env apps/api/dist/main.js         # serves on http://127.0.0.1:4000 (PORT in .env; the web app uses 3000)
 node --env-file=.env apps/api/dist/main.js --check # validate configuration only
 ```
 
