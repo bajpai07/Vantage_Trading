@@ -4,11 +4,12 @@
 // success, capped at one minute). Nothing here reads a clock or compares timestamps: the freshness shown is whatever
 // the API reports; the browser only keeps the last good answer and says when a refresh failed.
 import { useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import { QuotesResponse } from '@vantage/contracts';
 import type { QuoteItem } from '@vantage/contracts';
 import { nextDelayMs } from './backoff';
 import { clientGet } from './client-api';
+import { loginUrlFor } from './return-to';
 
 export interface QuotePoll {
   readonly quote: QuoteItem;
@@ -24,6 +25,7 @@ type PollState = Omit<QuotePoll, 'refreshNow'>;
 
 export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number): QuotePoll {
   const router = useRouter();
+  const pathname = usePathname();
   const [state, setState] = useState<PollState>({
     quote: initial,
     refreshFailed: false,
@@ -48,7 +50,7 @@ export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number)
         failures.current = 0;
         setState((s) => ({ quote: item, refreshFailed: false, version: s.version + 1 }));
       } else if (!r.ok && r.kind === 'unauthenticated') {
-        router.replace('/login?reason=expired');
+        router.replace(loginUrlFor(pathname));
         router.refresh();
         return;
       } else {
@@ -78,7 +80,7 @@ export function useQuotePoll(symbol: string, initial: QuoteItem, pollMs: number)
       clearTimeout(timer);
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [symbol, pollMs, router]);
+  }, [symbol, pollMs, router, pathname]);
 
   return { ...state, refreshNow: () => refreshRef.current() };
 }

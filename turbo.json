@@ -4,7 +4,13 @@
     "build": {
       "dependsOn": ["^build"],
       "outputs": ["dist/**", "*.tsbuildinfo", ".next/**", "!.next/cache/**"],
-      "env": ["API_BASE_URL", "APP_ENV", "PORTFOLIO_POLL_MS", "QUOTE_POLL_MS", "TRUST_FORWARDED_FOR"]
+      "env": [
+        "API_BASE_URL",
+        "APP_ENV",
+        "PORTFOLIO_POLL_MS",
+        "QUOTE_POLL_MS",
+        "TRUST_FORWARDED_FOR"
+      ]
     },
     "typecheck": {
       "dependsOn": ["^build"]

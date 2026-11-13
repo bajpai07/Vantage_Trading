@@ -91,3 +91,42 @@ export const BUY_AAPL_10 = {
   qty: '10',
   referencePrice: '190.00',
 };
+
+async function controlJson<T>(path: string, body: unknown): Promise<T> {
+  const res = await fetch(`http://127.0.0.1:${String(CONTROL_PORT)}${path}`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`control ${path} failed with ${String(res.status)}`);
+  return (await res.json()) as T;
+}
+
+/** The full ledger + trading reconciliation (zero tolerance) of one user's account (or of all), run by the test API. */
+export async function reconcile(
+  email?: string,
+): Promise<{ accounts: number; violations: unknown[] }> {
+  return controlJson('/reconcile', email === undefined ? {} : { email });
+}
+
+/** How many orders and executions this user has in the database (proves "exactly one order"). */
+export async function counts(email: string): Promise<{ orders: string; executions: string }> {
+  return controlJson('/counts', { email });
+}
+
+/** Reads a JSON endpoint of the API as the signed-in user of this browser context. */
+export async function apiGet<T = Record<string, unknown>>(
+  context: BrowserContext,
+  path: string,
+): Promise<T> {
+  const res = await context.request.get(`${API_ORIGIN}${path}`, {
+    headers: { Origin: WEB_ORIGIN },
+  });
+  expect(res.status(), `${path}: ${await res.text()}`).toBe(200);
+  return (await res.json()) as T;
+}
+
+/** Types a quantity into the ticket and waits for the estimate of it. */
+export async function enterQty(page: Page, qty: string): Promise<void> {
+  await page.getByTestId('ticket-qty').fill(qty);
+}

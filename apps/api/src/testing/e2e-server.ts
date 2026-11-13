@@ -6,7 +6,7 @@
 //
 //   E2E_API_PORT (default 4100)  the API
 //   E2E_CONTROL_PORT (default 4101)  POST /quote {symbol,bid,ask,ageSeconds?,last?} | {symbol,clear:true}
-//                                    POST /instrument {symbol,status?,tradableIn?}   POST /clock {iso}   POST /shutdown   GET /health
+//                                    POST /instrument {symbol,status?,tradableIn?}   POST /reconcile {email?}   POST /counts {email}   POST /clock {iso}   POST /shutdown   GET /health
 //   E2E_WEB_ORIGIN (default http://localhost:3100)  the one origin the API accepts (CSRF and CORS)
 import 'reflect-metadata';
 import { createServer } from 'node:http';
@@ -14,6 +14,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http';
 import { createTestDatabase } from '@vantage/test-utils';
 import { QUOTE_STORE } from '../tokens.js';
 import type { InMemoryQuoteStore } from '../modules/market-data/quote.store.js';
+import { reconcileAccount } from '../modules/ledger/index.js';
 import { createOrdersHarness, setQuote } from './orders-kit.js';
 
 const apiPort = Number(process.env.E2E_API_PORT ?? 4100);
@@ -85,6 +86,27 @@ const control = createServer((req, res) => {
           );
         }
         return send(res, 200, { ok: true });
+      }
+      if (req.url === '/reconcile') {
+        // test-only: the full reconciliation (ledger + trading, zero tolerance) of every account, or of one user's
+        const email = typeof body.email === 'string' ? body.email : null;
+        const accounts = await db.migrator.query<{ id: string }>(
+          'SELECT a.id FROM accounts a JOIN users u ON u.id = a.user_id WHERE $1::text IS NULL OR u.email = $1::citext',
+          [email],
+        );
+        const violations = [];
+        for (const a of accounts.rows)
+          violations.push(...(await reconcileAccount(db.migrator, a.id)));
+        return send(res, 200, { accounts: accounts.rows.length, violations });
+      }
+      if (req.url === '/counts') {
+        // test-only: how many orders and executions this user has (proves "exactly one order")
+        const r = await db.migrator.query<{ orders: string; executions: string }>(
+          `SELECT (SELECT count(*) FROM orders o JOIN accounts a ON a.id = o.account_id JOIN users u ON u.id = a.user_id WHERE u.email = $1::citext)::text AS orders,
+                  (SELECT count(*) FROM executions e JOIN accounts a ON a.id = e.account_id JOIN users u ON u.id = a.user_id WHERE u.email = $1::citext)::text AS executions`,
+          [String(body.email)],
+        );
+        return send(res, 200, r.rows[0]);
       }
       if (req.url === '/clock') {
         h.clock.set(String(body.iso));

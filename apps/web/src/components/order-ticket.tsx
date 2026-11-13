@@ -391,7 +391,7 @@ export function OrderTicket(props: {
                     We couldn't confirm your order.{' '}
                     {describeFailure(t.outcome.failure, 'load').message} It may or may not have been
                     placed. You can retry safely: the same request cannot place it twice, or check{' '}
-                    <Link href="/orders" className="underline">
+                    <Link href="/orders" className="font-medium text-text-0! underline">
                       your orders
                     </Link>
                     .

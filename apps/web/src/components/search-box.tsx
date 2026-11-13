@@ -213,7 +213,7 @@ export function SearchBox() {
                       {item.symbol}
                     </span>
                     <span className="min-w-0 flex-1 truncate text-text-1">{item.name}</span>
-                    <span className="shrink-0 text-[11px] text-text-2">
+                    <span className="shrink-0 text-[11px] text-text-1">
                       {item.exchange} · {ASSET_CLASS_LABELS[item.assetClass]}
                     </span>
                     {sv.tone === 'ok' ? null : (
