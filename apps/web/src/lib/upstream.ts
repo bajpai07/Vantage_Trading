@@ -24,13 +24,24 @@ const HOP_BY_HOP = new Set([
   'upgrade',
 ]);
 
-/** Request headers sent on to the API: everything the browser sent except hop-by-hop headers and the ones fetch owns. */
-export function upstreamRequestHeaders(incoming: Headers): Headers {
+/**
+ * Request headers sent on to the API: everything the browser sent except hop-by-hop headers and the ones fetch owns.
+ * X-Forwarded-For (D-69) is passed on only when `trustForwardedFor` is set; otherwise it is dropped, and so are the
+ * other headers that could claim a client address (Forwarded, X-Real-IP, ...), so the API falls back to this server's
+ * own address rather than to something a client chose.
+ */
+export function upstreamRequestHeaders(
+  incoming: Headers,
+  options: { trustForwardedFor: boolean },
+): Headers {
   const out = new Headers();
   incoming.forEach((value, key) => {
     const k = key.toLowerCase();
     if (HOP_BY_HOP.has(k) || k === 'host' || k === 'content-length' || k === 'accept-encoding')
       return;
+    if (k === 'forwarded' || k === 'x-real-ip' || k === 'x-client-ip' || k === 'true-client-ip')
+      return;
+    if (k === 'x-forwarded-for' && !options.trustForwardedFor) return;
     out.append(key, value);
   });
   return out;

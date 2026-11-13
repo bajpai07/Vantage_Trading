@@ -1,5 +1,6 @@
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import type { NextFunction, Request, Response } from 'express';
+import { resolveClientIp } from '@vantage/config';
 import type { Config } from '@vantage/config';
 import { requestLogger, safeRequestId } from './common/http.js';
 import type { AppRequest } from './common/http.js';
@@ -18,6 +19,17 @@ export function configureApp(app: NestExpressApplication, config: Config, logger
     next();
   });
 
+  // D-69: the client address, resolved once. X-Forwarded-For is believed only when the socket peer is one of the
+  // configured trusted proxies (default: none), so a client can never choose its own address.
+  app.use((req: Request, _res: Response, next: NextFunction) => {
+    const header = req.headers['x-forwarded-for'];
+    (req as AppRequest).clientIp = resolveClientIp({
+      socketAddress: req.socket.remoteAddress,
+      forwardedFor: Array.isArray(header) ? header.join(', ') : header,
+      trusted: config.trustedProxies,
+    });
+    next();
+  });
   // Basic security headers. The API serves JSON only.
   app.use((_req: Request, res: Response, next: NextFunction) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');

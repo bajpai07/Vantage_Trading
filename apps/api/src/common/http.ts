@@ -10,6 +10,8 @@ export interface AuthContext {
 export interface AppRequest extends Request {
   requestId: string;
   auth?: AuthContext;
+  /** The client address resolved once per request (D-69); see configure-app.ts. */
+  clientIp?: string | undefined;
 }
 
 export const SESSION_COOKIE = 'vantage_session';
@@ -58,9 +60,14 @@ export function clearedSessionCookie(secure: boolean): string {
   ].join('; ');
 }
 
-/** The peer address of the socket. X-Forwarded-For is NOT trusted (no trusted-proxy setting exists yet). */
+/**
+ * The client address of this request. configure-app.ts resolves it once (D-69): the socket address, or, only when the
+ * socket peer is a configured trusted proxy, the address that proxy reports in X-Forwarded-For. Rate limits and
+ * audit rows use this and nothing else.
+ */
 export function clientIp(req: Request): string | undefined {
-  return req.socket.remoteAddress;
+  const resolved = (req as AppRequest).clientIp;
+  return resolved !== undefined ? resolved : req.socket.remoteAddress;
 }
 
 export function requestLogger(logger: Logger) {

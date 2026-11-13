@@ -30,7 +30,9 @@ async function forward(
   try {
     const upstream = await fetch(url, {
       method: req.method,
-      headers: upstreamRequestHeaders(req.headers),
+      headers: upstreamRequestHeaders(req.headers, {
+        trustForwardedFor: getWebConfig().trustForwardedFor,
+      }),
       ...(hasBody ? { body: req.body, duplex: 'half' } : {}),
       redirect: 'manual',
       cache: 'no-store',

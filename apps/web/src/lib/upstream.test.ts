@@ -40,6 +40,7 @@ describe('upstreamRequestHeaders', () => {
         'x-request-id': 'req-12345678',
         accept: 'application/json',
       }),
+      { trustForwardedFor: false },
     );
     expect(out.get('cookie')).toBe('vantage_session=abc');
     expect(out.get('origin')).toBe('http://localhost:3000');
@@ -61,8 +62,42 @@ describe('upstreamRequestHeaders', () => {
         te: 'trailers',
         'proxy-authorization': 'x',
       }),
+      { trustForwardedFor: false },
     );
     expect([...out.keys()]).toEqual([]);
+  });
+});
+
+describe('X-Forwarded-For handling (D-69)', () => {
+  const incoming = new Headers({
+    'x-forwarded-for': '198.51.100.7',
+    forwarded: 'for=1.1.1.1',
+    'x-real-ip': '1.1.1.1',
+    'x-client-ip': '1.1.1.1',
+    'true-client-ip': '1.1.1.1',
+    cookie: 'vantage_session=abc',
+  });
+
+  it('trusted: the X-Forwarded-For Next provides is passed to the API; other claims of a client address are still dropped', () => {
+    const out = upstreamRequestHeaders(incoming, { trustForwardedFor: true });
+    expect(out.get('x-forwarded-for')).toBe('198.51.100.7');
+    for (const h of ['forwarded', 'x-real-ip', 'x-client-ip', 'true-client-ip'])
+      expect(out.has(h), h).toBe(false);
+    expect(out.get('cookie')).toBe('vantage_session=abc'); // control: the rest still crosses
+  });
+
+  it('not trusted (the safe setting for a directly exposed app): every client-address header is dropped, the cookie still crosses', () => {
+    const out = upstreamRequestHeaders(incoming, { trustForwardedFor: false });
+    for (const h of [
+      'x-forwarded-for',
+      'forwarded',
+      'x-real-ip',
+      'x-client-ip',
+      'true-client-ip',
+    ]) {
+      expect(out.has(h), h).toBe(false);
+    }
+    expect(out.get('cookie')).toBe('vantage_session=abc');
   });
 });
 

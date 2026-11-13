@@ -17,6 +17,7 @@ describe('loadWebConfig', () => {
       appEnv: 'local',
       apiBaseUrl: DEFAULT_API_BASE_URL,
       portfolioPollMs: DEFAULT_POLL_MS,
+      trustForwardedFor: true,
     });
     expect(DEFAULT_POLL_MS).toBe(15_000);
   });
@@ -28,7 +29,12 @@ describe('loadWebConfig', () => {
         API_BASE_URL: 'http://localhost:4100',
         PORTFOLIO_POLL_MS: '2000',
       }),
-    ).toEqual({ appEnv: 'test', apiBaseUrl: 'http://localhost:4100', portfolioPollMs: 2000 });
+    ).toEqual({
+      appEnv: 'test',
+      apiBaseUrl: 'http://localhost:4100',
+      portfolioPollMs: 2000,
+      trustForwardedFor: true,
+    });
   });
 
   it('staging and production must name the API explicitly (control: with it they load)', () => {
@@ -38,7 +44,11 @@ describe('loadWebConfig', () => {
         rule: expect.stringContaining('required'),
       });
       expect(
-        loadWebConfig({ APP_ENV: appEnv, API_BASE_URL: 'https://api.example.test' }).apiBaseUrl,
+        loadWebConfig({
+          APP_ENV: appEnv,
+          API_BASE_URL: 'https://api.example.test',
+          TRUST_FORWARDED_FOR: 'false',
+        }).apiBaseUrl,
       ).toBe('https://api.example.test');
     }
   });
@@ -66,5 +76,32 @@ describe('loadWebConfig', () => {
       'APP_ENV',
       'PORTFOLIO_POLL_MS',
     ]);
+  });
+});
+
+describe('TRUST_FORWARDED_FOR (D-69)', () => {
+  it('defaults to true in local and test (development, no proxy), and can be switched off', () => {
+    expect(loadWebConfig({}).trustForwardedFor).toBe(true);
+    expect(loadWebConfig({ APP_ENV: 'test' }).trustForwardedFor).toBe(true);
+    expect(loadWebConfig({ TRUST_FORWARDED_FOR: 'false' }).trustForwardedFor).toBe(false);
+  });
+
+  it('staging and production must state it (control: stated values load)', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const base = { APP_ENV: appEnv, API_BASE_URL: 'https://api.example.test' };
+      expect(fail(base).issues).toContainEqual({
+        name: 'TRUST_FORWARDED_FOR',
+        rule: expect.stringContaining('required'),
+      });
+      expect(loadWebConfig({ ...base, TRUST_FORWARDED_FOR: 'true' }).trustForwardedFor).toBe(true);
+      expect(loadWebConfig({ ...base, TRUST_FORWARDED_FOR: 'false' }).trustForwardedFor).toBe(
+        false,
+      );
+    }
+  });
+
+  it.each(['yes', '1', 'TRUE', ''])('rejects %j by name without echoing it', (v) => {
+    const e = fail({ TRUST_FORWARDED_FOR: v });
+    expect(e.issues.map((i) => i.name)).toContain('TRUST_FORWARDED_FOR');
   });
 });

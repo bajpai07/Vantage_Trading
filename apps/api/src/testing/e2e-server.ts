@@ -21,7 +21,10 @@ const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 4101);
 const webOrigin = process.env.E2E_WEB_ORIGIN ?? 'http://localhost:3100';
 
 const db = await createTestDatabase();
-const h = await createOrdersHarness(db, { env: { WEB_ORIGIN: webOrigin } });
+// the web server (this machine, loopback) is the one trusted proxy: tests can then send X-Forwarded-For through it (D-69)
+const h = await createOrdersHarness(db, {
+  env: { WEB_ORIGIN: webOrigin, TRUSTED_PROXY_CIDRS: '127.0.0.1/32,::1/128' },
+});
 await h.app.listen(apiPort, '127.0.0.1');
 
 let closing = false;

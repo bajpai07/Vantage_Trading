@@ -1,4 +1,8 @@
 import { z } from 'zod';
+import { parseCidrList } from './cidr.js';
+import type { Cidr } from './cidr.js';
+
+export * from './cidr.js';
 
 export const APP_ENVS = ['local', 'test', 'staging', 'production'] as const;
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
@@ -23,6 +27,13 @@ export interface Config {
   readonly tradingEnabled: boolean;
   /** Orders one user may place per minute (in memory, per process). */
   readonly orderRateLimitPerMinute: number;
+  /** Order previews one user may request per minute (D-70, in memory, per process). */
+  readonly orderPreviewRateLimitPerMinute: number;
+  /**
+   * D-69: the proxies whose X-Forwarded-For header may be believed. Empty (the default) trusts nobody: the client
+   * address is the socket address.
+   */
+  readonly trustedProxies: readonly Cidr[];
 }
 
 export type Env = Readonly<Record<string, string | undefined>>;
@@ -120,6 +131,7 @@ const appSchema = z.object({
   COOKIE_SECURE: z.enum(['true', 'false'], { error: 'must be true or false' }),
   TRADING_ENABLED: z.enum(['true', 'false'], { error: 'must be true or false' }),
   ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
+  ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'previews per user per minute'),
 });
 
 function dbUser(url: string): string | undefined {
@@ -145,10 +157,32 @@ export function loadConfig(env: Env): Config {
       env.TRADING_ENABLED ??
       (env.APP_ENV === 'local' || env.APP_ENV === 'test' ? 'true' : undefined),
     ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
+    ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: env.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE ?? '60',
   });
   if (!app.success) {
     for (const i of app.error.issues) {
       issues.push({ name: String(i.path[0] ?? 'env'), rule: i.message });
+    }
+  }
+  // D-69: which proxies may be believed about the client address. Empty or "none" trusts nobody. Staging and
+  // production must state it explicitly (a missing value there could silently put every user behind one address).
+  let trustedProxies: readonly Cidr[] = [];
+  if (env.TRUSTED_PROXY_CIDRS === undefined) {
+    if (env.APP_ENV === 'staging' || env.APP_ENV === 'production') {
+      issues.push({
+        name: 'TRUSTED_PROXY_CIDRS',
+        rule: 'is required when APP_ENV is staging or production (use "none" to trust no proxy)',
+      });
+    }
+  } else {
+    const list = parseCidrList(env.TRUSTED_PROXY_CIDRS);
+    if (list === null) {
+      issues.push({
+        name: 'TRUSTED_PROXY_CIDRS',
+        rule: 'must be a comma-separated list of IP addresses or CIDR ranges (for example 127.0.0.1/32,10.0.0.0/8), or none',
+      });
+    } else {
+      trustedProxies = list;
     }
   }
   // COOKIE_SECURE=false is only allowed for local and test (cookies must be Secure elsewhere).
@@ -212,6 +246,8 @@ export function loadConfig(env: Env): Config {
     cookieSecure: app.data.COOKIE_SECURE === 'true',
     tradingEnabled: app.data.TRADING_ENABLED === 'true',
     orderRateLimitPerMinute: app.data.ORDER_RATE_LIMIT_PER_MINUTE,
+    orderPreviewRateLimitPerMinute: app.data.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE,
+    trustedProxies,
   };
 }
 

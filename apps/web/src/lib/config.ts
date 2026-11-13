@@ -15,6 +15,13 @@ export interface WebConfig {
   readonly apiBaseUrl: string;
   /** Portfolio refresh interval while the tab is visible. */
   readonly portfolioPollMs: number;
+  /**
+   * D-69: pass the X-Forwarded-For header Next provides on to the API (so the API can see the real client address when it
+   * trusts this server). Set it only when this app runs behind a reverse proxy you control that appends the peer
+   * address (or in development): Next does NOT append the peer itself when a request already carries the header.
+   * false drops the header, and the API then sees this server's own address for everyone.
+   */
+  readonly trustForwardedFor: boolean;
 }
 
 export class WebConfigError extends Error {
@@ -51,6 +58,7 @@ const schema = z.object({
     .refine((n) => n >= 1000 && n <= 300_000, {
       error: 'must be a whole number of milliseconds from 1000 to 300000',
     }),
+  TRUST_FORWARDED_FOR: z.enum(['true', 'false'], { error: 'must be true or false' }),
 });
 
 export function loadWebConfig(env: Readonly<Record<string, string | undefined>>): WebConfig {
@@ -63,10 +71,18 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
       rule: 'is required when APP_ENV is staging or production',
     });
   }
+  // staging and production must say whether a reverse proxy in front appends the client address
+  if ((appEnv === 'staging' || appEnv === 'production') && env.TRUST_FORWARDED_FOR === undefined) {
+    issues.push({
+      name: 'TRUST_FORWARDED_FOR',
+      rule: 'is required when APP_ENV is staging or production (true only behind a reverse proxy you control)',
+    });
+  }
   const parsed = schema.safeParse({
     APP_ENV: appEnv,
     API_BASE_URL: env.API_BASE_URL ?? DEFAULT_API_BASE_URL,
     PORTFOLIO_POLL_MS: env.PORTFOLIO_POLL_MS ?? String(DEFAULT_POLL_MS),
+    TRUST_FORWARDED_FOR: env.TRUST_FORWARDED_FOR ?? 'true',
   });
   if (!parsed.success) {
     for (const i of parsed.error.issues) {
@@ -78,6 +94,7 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
     appEnv: parsed.data.APP_ENV,
     apiBaseUrl: parsed.data.API_BASE_URL,
     portfolioPollMs: parsed.data.PORTFOLIO_POLL_MS,
+    trustForwardedFor: parsed.data.TRUST_FORWARDED_FOR === 'true',
   };
 }
 

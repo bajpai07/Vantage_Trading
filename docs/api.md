@@ -68,7 +68,17 @@ Every `POST`, `PUT`, `PATCH` and `DELETE` must carry an `Origin` header equal to
 | Failed logins | 20 per 15 minutes | IP                     |
 | Registrations | 10 per hour       | IP                     |
 
-Exceeding a limit returns `429` with `Retry-After`. **Limitations:** counters live in the memory of one API process (several processes each count separately, a restart clears them), and the IP is the socket peer address: `X-Forwarded-For` is **not** trusted and no trusted-proxy setting exists yet, so behind a reverse proxy every client would share the proxy's address until that setting is built.
+Exceeding a limit returns `429` with `Retry-After`. **Limitations:** counters live in the memory of one API process (several processes each count separately, a restart clears them), and the IP is the client address as resolved by the trusted-proxy rule below (M6b, D-69): by default the socket peer address, and `X-Forwarded-For` is believed only from a proxy you name.
+
+### Trusted proxy (M6b, D-69)
+
+`TRUSTED_PROXY_CIDRS` (comma-separated IP addresses or CIDR ranges; empty or `none` trusts nobody; **required in staging and production**, where `none` must be written explicitly) lists the proxies whose `X-Forwarded-For` header the API may believe. The client address of a request is resolved once and used by every IP-keyed limiter (login, registration) and by the audit log:
+
+- If the socket peer is **not** in the list (the default for everyone), the header is **ignored completely** and the client address is the socket address. Anyone can send that header, so a spoofed value from an untrusted source changes nothing.
+- If the peer is a trusted proxy, the header is read **from the right**: the first entry that is not itself a trusted proxy is the client. Entries a client put on the left cannot choose its identity, and a missing or malformed header falls back to the proxy's own address (never a guess). IPv4-mapped IPv6 addresses (`::ffff:1.2.3.4`) match IPv4 ranges.
+- Order placement and preview limits stay **per user** (not per address).
+
+When the web app (`apps/web`) proxies to the API, the API sees the web server's address. List it (and any reverse proxy in front of it) in `TRUSTED_PROXY_CIDRS`, and set `TRUST_FORWARDED_FOR=true` in the web app **only** if a reverse proxy you control appends the real peer address to `X-Forwarded-For` (Next passes an existing header through unchanged and only adds one when none is present). With `TRUST_FORWARDED_FOR=false` the web app drops the header and every web user shares the web server's address.
 
 ## Login and registration behaviour worth knowing
 

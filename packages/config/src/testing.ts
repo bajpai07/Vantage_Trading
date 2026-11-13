@@ -12,6 +12,8 @@ export function buildTestEnv(overrides: Record<string, string | undefined> = {})
     MARKET_DATA_SOURCE: 'FIXTURE',
     WEB_ORIGIN: 'http://localhost:3000',
     COOKIE_SECURE: 'false',
+    // staging and production must state it; none trusts no proxy (a test overrides it to trust one)
+    TRUSTED_PROXY_CIDRS: 'none',
   };
   const out: Record<string, string> = {};
   for (const [k, v] of Object.entries({ ...base, ...overrides })) {
