@@ -3,7 +3,7 @@
 // decides the account, the quote, the fee schedule, the trading switch and the time.
 import { z } from 'zod';
 import { MoneyString } from './money-string.js';
-import { SymbolSchema } from './market.js';
+import { FreshnessState, SymbolSchema } from './market.js';
 
 /** Largest quantity accepted for one order (shares). Larger values are a validation error, not a reject. */
 export const MAX_ORDER_QTY = 1_000_000;
@@ -150,3 +150,54 @@ export type PositionResponse = z.output<typeof PositionResponse>;
 
 export const PositionsResponse = z.strictObject({ positions: z.array(PositionResponse) });
 export type PositionsResponse = z.output<typeof PositionsResponse>;
+
+// ---- order preview (M6b, D-70) --------------------------------------------------------------------------------
+
+/** POST /v1/orders/preview takes exactly the body of POST /v1/orders (and no Idempotency-Key: nothing is stored). */
+export const PreviewOrderRequest = PlaceOrderRequest;
+export type PreviewOrderRequest = z.output<typeof PreviewOrderRequest>;
+
+export const ORDER_PREVIEW_DISCLAIMER =
+  'Estimate only: the final price is decided when the order executes.';
+
+export const OrderPreviewQuote = z.strictObject({
+  bid: MoneyString.nullable(),
+  ask: MoneyString.nullable(),
+  last: MoneyString.nullable(),
+  /** The provider timestamp of the quote the estimate used. */
+  asOf: z.iso.datetime().nullable(),
+  source: z.string().nullable(),
+  /** From the shared freshness function. UNAVAILABLE (no quote) has null prices. */
+  freshness: FreshnessState,
+});
+export type OrderPreviewQuote = z.output<typeof OrderPreviewQuote>;
+
+/**
+ * What the order would do if it were placed now, decided by the same engine function as the real order, on the current
+ * quote, fee schedule, cash and position. ADVISORY: nothing is stored or locked, and the real order decides again.
+ * Estimates are null when the order cannot be priced honestly (paused, halted, market closed, no usable quote, bad
+ * quantity); for a reject that comes after the price check (price moved, not enough cash or shares, fee above the
+ * proceeds) they show what the order would have cost.
+ */
+export const OrderPreviewResponse = z.strictObject({
+  wouldFill: z.boolean(),
+  /** The reason the order would be rejected (plain-language copy is the client's), or null when it would fill. */
+  rejectCode: OrderRejectCode.nullable(),
+  /** Fill price per share after slippage, rounded to the tick. */
+  estimatedPrice: MoneyString.nullable(),
+  estimatedNotional: MoneyString.nullable(),
+  estimatedFee: MoneyString.nullable(),
+  /** Cash after the order; negative for a purchase that could not be paid. */
+  estimatedCashAfter: MoneyString.nullable(),
+  /** SELL only: notional minus fee. */
+  estimatedProceeds: MoneyString.nullable(),
+  slippageBps: z
+    .string()
+    .regex(/^[0-9]+(\.[0-9]+)?$/)
+    .nullable(),
+  quote: OrderPreviewQuote,
+  disclaimer: z.literal(ORDER_PREVIEW_DISCLAIMER),
+  /** Server time of this preview. */
+  generatedAt: z.iso.datetime(),
+});
+export type OrderPreviewResponse = z.output<typeof OrderPreviewResponse>;

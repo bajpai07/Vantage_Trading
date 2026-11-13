@@ -250,6 +250,38 @@ First failing rule wins (the order of this list). Details: [trading.md](trading.
 - `TRADING_ENABLED` (config; default `true` for local and test, **must be set explicitly** in staging and production): when `false` every new order is stored as `REJECTED` with `TRADING_PAUSED`.
 - Delayed quotes are executable (`allow_execution_on_delayed` is true in the MVP, TRADING_ENGINE section 3, D-09); `STALE`, `CLOSED` and `UNAVAILABLE` are not.
 
+### POST /v1/orders/preview (M6b, D-70)
+
+What a MARKET order would do **right now**. Auth and the CSRF `Origin` rule as for orders; the body is exactly the order body (symbol, side, type, qty, `referencePrice`) and there is **no `Idempotency-Key`**: nothing is stored. It answers `200` (nothing is created), is limited per user (`ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE`, default **60**, its own counter: previews never use the order allowance; `429` with `Retry-After`), and is not audit-logged.
+
+```json
+{
+  "wouldFill": true,
+  "rejectCode": null,
+  "estimatedPrice": "190.04",
+  "estimatedNotional": "1900.40",
+  "estimatedFee": "0.00",
+  "estimatedCashAfter": "8099.60",
+  "estimatedProceeds": null,
+  "slippageBps": "2",
+  "quote": {
+    "bid": "189.95",
+    "ask": "190.00",
+    "last": "189.97",
+    "asOf": "2026-11-10T14:45:00.000Z",
+    "source": "FIXTURE",
+    "freshness": "DELAYED"
+  },
+  "disclaimer": "Estimate only: the final price is decided when the order executes.",
+  "generatedAt": "2026-11-10T15:00:00.000Z"
+}
+```
+
+- All amounts are canonical decimal strings; the browser does no money arithmetic. `estimatedProceeds` is set for a SELL only (notional minus fee). `estimatedCashAfter` is negative when a purchase could not be paid.
+- **Same rules as the real order.** It calls the same engine function (`decideForCommand`) on the current quote, fee schedule, cash and position, read in one read-only `REPEATABLE READ` transaction: **no locks, no writes**. A preview never blocks (or is blocked by) a real order on the same account.
+- A business reject is a normal `200` answer with `wouldFill: false` and a `rejectCode` (the same 13 codes). For a reject that comes after the price check (`PRICE_MOVED`, `INSUFFICIENT_BUYING_POWER`, `INSUFFICIENT_POSITION`, `FEE_EXCEEDS_PROCEEDS`) the estimate shows what the order would have cost; for earlier rejects (paused, halted, closed, stale, no quote, bad quantity) all estimates are `null` and `quote.freshness` says why. An unknown symbol is `404 INSTRUMENT_NOT_FOUND`.
+- **Advisory only.** The real order re-decides under its locks against the quote of that moment; the price can differ. `referencePrice` (the ask the user saw for a BUY, the bid for a SELL) feeds the same 1% collar as the real order.
+
 ## Portfolio, history and activity (M5, read side)
 
 All routes need a valid session and answer for the session user's own MAIN account only: **there is no account id in any URL, query or body**, and another user's rows are never reachable. They are read-only (no ledger write; the only table the job writes is `equity_snapshots`). Money amounts are decimal strings **rounded to 2 decimals, HALF_EVEN, only at the API edge**; every object with rounded amounts has an `exact` companion with the full-precision values. Prices (`avgCost`, `mark`, `price`) are canonical and never rounded. Definitions and honesty rules: [portfolio.md](portfolio.md).

@@ -80,6 +80,10 @@ Endpoints, examples and error codes: [api.md](api.md). Decisions D-55 to D-59 ar
 - **Rate limit.** 30 orders per user per minute (in memory, per process; `ORDER_RATE_LIMIT_PER_MINUTE`).
 - **Round trips.** A first-time FILL costs 29 database round trips (session, account and key lookup, instrument and fee schedule, BEGIN, lock, key re-check, status, replay check, cash lock and read, position, lots, the ledger post, order, the three events in one statement, execution, lot or closures, position, idempotency row, COMMIT, audit). The executor does not repeat the account lock the service already took (`accountLocked`).
 
+## Order preview is advisory (M6b, D-70)
+
+`POST /v1/orders/preview` runs the same `decideForCommand` (the engine's `decideMarketOrder` with the same input mapping the executor uses) on a plain read of the current state: one read-only `REPEATABLE READ` transaction, **no locks, no writes, nothing stored, no audit row**. So a preview can never use different rules from the real order, never blocks it, and never changes money. It is **not a promise**: between the preview and the order the quote, the cash or the position may change, and the real order decides again under its account locks. The estimates after a reject that comes after the price check (price moved, not enough cash or shares, fee above proceeds) show what the order would have cost; earlier rejects have no honest price, so their estimates are `null`. Tests prove that the preview equals the real fill for the four golden vectors and for random orders, that it equals the reject code for all 13 codes, and that it writes and locks nothing.
+
 ## What comes next
 
 Limit and stop orders, reservations, cancel, the async matcher, the account-event outbox, the purge of idempotency rows after 48 hours, portfolio valuation and P&L (M5).

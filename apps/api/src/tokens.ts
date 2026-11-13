@@ -21,3 +21,6 @@ export const QUOTE_STORE = Symbol('QUOTE_STORE');
 export const ORDER_LIMITER = Symbol('ORDER_LIMITER');
 /** Test seams for order execution ({} in production). */
 export const ORDER_HOOKS = Symbol('ORDER_HOOKS');
+
+/** Per-user limiter for POST /v1/orders/preview (in memory). */
+export const ORDER_PREVIEW_LIMITER = Symbol('ORDER_PREVIEW_LIMITER');

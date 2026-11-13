@@ -14,7 +14,13 @@ import {
   decideMarketOrder,
   sellFillLegs,
 } from '@vantage/engine';
-import type { LotConsumption, OpenLot, OrderSide, RejectCode } from '@vantage/engine';
+import type {
+  LotConsumption,
+  MarketOrderDecision,
+  OpenLot,
+  OrderSide,
+  RejectCode,
+} from '@vantage/engine';
 import type { Entitlement, FreshnessState, InstrumentStatus } from '@vantage/market-model';
 import { add, div, mul, parse, sub } from '@vantage/money';
 import { newId } from '../../ids.js';
@@ -154,6 +160,38 @@ const toOrder = (r: OrderRow): OrderRecord => ({
 const ORDER_COLUMNS = `id, account_id, instrument_id, client_order_id, side::text AS side, qty, filled_qty,
   status::text AS status, reject_code`;
 
+/** What the decision depends on besides the command itself: read under the account locks by the executor. */
+export interface DecisionState {
+  readonly accountActive: boolean;
+  /** CASH balance (USD), a plain decimal string. */
+  readonly cash: string;
+  /** Open quantity of this instrument. */
+  readonly positionQty: string;
+}
+
+/**
+ * The ONE place a command and the account state become a decision. The executor calls it under its locks, and the order
+ * preview (D-70) calls it on a plain read, so the preview can never use different rules from the real order.
+ */
+export function decideForCommand(
+  cmd: MarketOrderCommand,
+  state: DecisionState,
+): MarketOrderDecision {
+  return decideMarketOrder({
+    side: cmd.side,
+    qty: cmd.qty,
+    instrument: cmd.instrument,
+    quote: cmd.quote === null ? null : { bid: cmd.quote.bid, ask: cmd.quote.ask },
+    freshness: cmd.freshness,
+    allowExecutionOnDelayed: cmd.allowExecutionOnDelayed,
+    schedule: cmd.feeSchedule,
+    referencePrice: cmd.referencePrice,
+    account: { active: state.accountActive, tradingEnabled: cmd.tradingEnabled },
+    cash: state.cash,
+    positionQty: state.positionQty,
+  });
+}
+
 export async function executeMarketOrder(
   client: Queryable,
   cmd: MarketOrderCommand,
@@ -214,19 +252,7 @@ export async function executeMarketOrder(
   }));
 
   // 4. DECIDE (the engine is the only place that decides)
-  const decision = decideMarketOrder({
-    side: cmd.side,
-    qty: cmd.qty,
-    instrument: cmd.instrument,
-    quote: cmd.quote === null ? null : { bid: cmd.quote.bid, ask: cmd.quote.ask },
-    freshness: cmd.freshness,
-    allowExecutionOnDelayed: cmd.allowExecutionOnDelayed,
-    schedule: cmd.feeSchedule,
-    referencePrice: cmd.referencePrice,
-    account: { active: accountActive, tradingEnabled: cmd.tradingEnabled },
-    cash,
-    positionQty,
-  });
+  const decision = decideForCommand(cmd, { accountActive, cash, positionQty });
 
   const created = {
     type: 'MARKET',

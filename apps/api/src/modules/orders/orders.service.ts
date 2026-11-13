@@ -2,7 +2,12 @@ import { createHash } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { Config } from '@vantage/config';
-import { ORDERS_PAGE, OrderResponse } from '@vantage/contracts';
+import {
+  ORDERS_PAGE,
+  ORDER_PREVIEW_DISCLAIMER,
+  OrderPreviewResponse,
+  OrderResponse,
+} from '@vantage/contracts';
 import type {
   ListOrdersQuery,
   ListOrdersResponse,
@@ -19,12 +24,15 @@ import { CLOCK, CONFIG, LOGGER, ORDER_HOOKS, POOL } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
 import { AuditService } from '../audit/audit.service.js';
 import { QuoteService } from '../market-data/quote.service.js';
+import type { QuoteSnapshotResult } from '../market-data/quote.service.js';
 import {
   ClientOrderIdMismatchError,
   DuplicateClientOrderIdError,
   executeMarketOrder,
 } from '../trading/index.js';
+import { previewMarketOrder } from '../trading/preview.js';
 import type {
+  DecisionState,
   ExecuteHooks,
   ExecutionResult,
   FeeScheduleSnapshot,
@@ -204,32 +212,15 @@ export class OrdersService {
       },
       now,
     );
-    const cmd: MarketOrderCommand = {
+    const cmd = this.#command({
       orderId: newId(),
       accountId,
       clientOrderId: key,
-      instrument: ctx.instrument,
-      side: body.side,
-      qty: body.qty,
-      referencePrice: parse(body.referencePrice).toString(),
-      quote:
-        snap.quote === null
-          ? null
-          : {
-              bid: snap.quote.bid,
-              ask: snap.quote.ask,
-              ...(snap.quote.last === undefined ? {} : { last: snap.quote.last }),
-              providerTs: snap.quote.providerTs,
-              source: snap.quote.source,
-              entitlement: snap.quote.entitlement,
-              delaySeconds: snap.quote.delaySeconds,
-            },
-      freshness: snap.freshness,
-      feeSchedule: ctx.feeSchedule,
-      allowExecutionOnDelayed: ALLOW_EXECUTION_ON_DELAYED,
-      tradingEnabled: this.config.tradingEnabled,
+      body,
+      ctx,
+      snap,
       now,
-    };
+    });
 
     // 3. One transaction: lock, re-check the key (a concurrent twin may have committed), execute, store.
     const client = await this.pool.connect();
@@ -283,6 +274,143 @@ export class OrdersService {
       requestId: meta.requestId,
     });
     return placed;
+  }
+
+  /** The command both the real order and the preview hand to the engine: one mapping, so they cannot drift apart. */
+  #command(input: {
+    orderId: string;
+    accountId: string;
+    clientOrderId: string;
+    body: PlaceOrderRequest;
+    ctx: InstrumentContext;
+    snap: QuoteSnapshotResult;
+    now: Date;
+  }): MarketOrderCommand {
+    const { body, ctx, snap } = input;
+    return {
+      orderId: input.orderId,
+      accountId: input.accountId,
+      clientOrderId: input.clientOrderId,
+      instrument: ctx.instrument,
+      side: body.side,
+      qty: body.qty,
+      referencePrice: parse(body.referencePrice).toString(),
+      quote:
+        snap.quote === null
+          ? null
+          : {
+              bid: snap.quote.bid,
+              ask: snap.quote.ask,
+              ...(snap.quote.last === undefined ? {} : { last: snap.quote.last }),
+              providerTs: snap.quote.providerTs,
+              source: snap.quote.source,
+              entitlement: snap.quote.entitlement,
+              delaySeconds: snap.quote.delaySeconds,
+            },
+      freshness: snap.freshness,
+      feeSchedule: ctx.feeSchedule,
+      allowExecutionOnDelayed: ALLOW_EXECUTION_ON_DELAYED,
+      tradingEnabled: this.config.tradingEnabled,
+      now: input.now,
+    };
+  }
+
+  /**
+   * POST /v1/orders/preview (D-70): what this order would do right now. It decides with the SAME engine function as the
+   * real order (decideForCommand) on the current quote, fee schedule, cash and position, read in one read-only
+   * REPEATABLE READ transaction. It takes no locks, writes nothing, is not audit-logged and is advisory only: the real
+   * order decides again, against the quote of that moment.
+   */
+  async preview(userId: string, body: PlaceOrderRequest): Promise<OrderPreviewResponse> {
+    const ctx = await this.#instrumentContext(body.symbol);
+    const now = this.clock.now();
+    const snap = await this.quotes.snapshotFor(
+      {
+        symbol: ctx.instrument.symbol,
+        exchange: ctx.instrument.exchange,
+        status: ctx.instrument.status,
+        assetClass: ctx.instrument.assetClass,
+      },
+      now,
+    );
+    const state = await this.#readState(userId, ctx.instrument.id);
+    const cmd = this.#command({
+      orderId: newId(),
+      accountId: state.accountId,
+      clientOrderId: 'preview',
+      body,
+      ctx,
+      snap,
+      now,
+    });
+    const out = previewMarketOrder(cmd, state);
+    const q = snap.quote;
+    const money = (v: string | null | undefined): string | null =>
+      v === null || v === undefined ? null : parse(v).toCanonicalString();
+    return OrderPreviewResponse.parse({
+      wouldFill: out.wouldFill,
+      rejectCode: out.rejectCode,
+      estimatedPrice: money(out.estimate?.price),
+      estimatedNotional: money(out.estimate?.notional),
+      estimatedFee: money(out.estimate?.fee),
+      estimatedCashAfter: money(out.estimate?.cashAfter),
+      estimatedProceeds: money(out.estimate?.proceeds),
+      slippageBps:
+        out.estimate === undefined || out.estimate === null
+          ? null
+          : parse(out.estimate.slippageBps).toString(),
+      quote: {
+        bid: q === null ? null : money(q.bid),
+        ask: q === null ? null : money(q.ask),
+        last: q === null ? null : money(q.last),
+        asOf: q === null ? null : q.providerTs.toISOString(),
+        source: q === null ? null : q.source,
+        freshness: snap.freshness,
+      },
+      disclaimer: ORDER_PREVIEW_DISCLAIMER,
+      generatedAt: now.toISOString(),
+    });
+  }
+
+  /** Account status, cash and position in ONE read-only snapshot: no lock, no write. */
+  async #readState(
+    userId: string,
+    instrumentId: string,
+  ): Promise<{ accountId: string } & DecisionState> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
+      const r = await client.query<{
+        id: string;
+        account_status: string;
+        user_status: string;
+        cash: string | null;
+        position_qty: string | null;
+      }>(
+        `SELECT a.id, a.status AS account_status, u.status::text AS user_status,
+                (SELECT la.balance FROM ledger_accounts la
+                  WHERE la.account_id = a.id AND la.type = 'CASH' AND la.currency = 'USD') AS cash,
+                (SELECT p.qty FROM positions p
+                  WHERE p.account_id = a.id AND p.instrument_id = $2::uuid) AS position_qty
+           FROM accounts a JOIN users u ON u.id = a.user_id
+          WHERE a.user_id = $1::uuid AND a.kind = 'MAIN'`,
+        [userId, instrumentId],
+      );
+      await client.query('COMMIT');
+      const row = r.rows[0];
+      if (row === undefined) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account not found');
+      return {
+        accountId: row.id,
+        accountActive: row.account_status === 'ACTIVE' && row.user_status === 'ACTIVE',
+        cash: row.cash ?? '0',
+        positionQty: row.position_qty ?? '0',
+      };
+    } catch (e) {
+      await client.query('ROLLBACK').catch(() => undefined);
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 
   async get(userId: string, orderId: string): Promise<OrderResponse> {
