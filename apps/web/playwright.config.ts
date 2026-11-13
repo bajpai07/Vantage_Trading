@@ -35,6 +35,7 @@ export default defineConfig({
       API_BASE_URL: `http://127.0.0.1:${String(API_PORT)}`,
       APP_ENV: 'test',
       PORTFOLIO_POLL_MS: String(POLL_MS),
+      QUOTE_POLL_MS: '1000',
       TRUST_FORWARDED_FOR: 'true',
     },
   },

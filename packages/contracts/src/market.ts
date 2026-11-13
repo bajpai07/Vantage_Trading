@@ -69,12 +69,17 @@ export const QuoteItem = z
     bid: MoneyString.optional(),
     ask: MoneyString.optional(),
     last: MoneyString.optional(),
+    /** ask minus bid, computed by the server (the browser does no money arithmetic). Present with bid and ask. */
+    spread: MoneyString.optional(),
     gapConfirmed: z.literal(true).optional(),
   })
   .refine(
     (q) =>
       q.freshness !== 'UNAVAILABLE' ||
-      (q.bid === undefined && q.ask === undefined && q.last === undefined),
+      (q.bid === undefined &&
+        q.ask === undefined &&
+        q.last === undefined &&
+        q.spread === undefined),
     'an UNAVAILABLE quote must carry no price',
   );
 export type QuoteItem = z.output<typeof QuoteItem>;

@@ -6,7 +6,7 @@
 //
 //   E2E_API_PORT (default 4100)  the API
 //   E2E_CONTROL_PORT (default 4101)  POST /quote {symbol,bid,ask,ageSeconds?,last?} | {symbol,clear:true}
-//                                    POST /clock {iso}   POST /shutdown   GET /health
+//                                    POST /instrument {symbol,status?,tradableIn?}   POST /clock {iso}   POST /shutdown   GET /health
 //   E2E_WEB_ORIGIN (default http://localhost:3100)  the one origin the API accepts (CSRF and CORS)
 import 'reflect-metadata';
 import { createServer } from 'node:http';
@@ -66,6 +66,23 @@ const control = createServer((req, res) => {
             ...(typeof body.ageSeconds === 'number' ? { ageSeconds: body.ageSeconds } : {}),
             ...(typeof body.last === 'string' ? { last: body.last } : {}),
           });
+        }
+        return send(res, 200, { ok: true });
+      }
+      if (req.url === '/instrument') {
+        // test-only: change an instrument's status or the tradable_in gate (the e2e tests restore it afterwards)
+        const symbol = String(body.symbol);
+        if (typeof body.status === 'string') {
+          await db.migrator.query(
+            'UPDATE instruments SET status = $2::instrument_status WHERE symbol = $1',
+            [symbol, body.status],
+          );
+        }
+        if (Array.isArray(body.tradableIn)) {
+          await db.migrator.query(
+            'UPDATE instruments SET tradable_in = $2::text[] WHERE symbol = $1',
+            [symbol, body.tradableIn.map(String)],
+          );
         }
         return send(res, 200, { ok: true });
       }

@@ -69,6 +69,7 @@ describe('3a. freshness through the API (REAL_TIME is not reachable with the DEL
         asOf: '2026-11-10T14:45:00.000Z',
         bid: '11.11',
         ask: '11.13',
+        spread: '0.02', // ask minus bid, computed by the server
         last: '11.11',
       },
       expect.objectContaining({

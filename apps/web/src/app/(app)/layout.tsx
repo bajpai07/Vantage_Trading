@@ -3,6 +3,7 @@ import { AppNav } from '../../components/app-nav';
 import { BfcacheGuard } from '../../components/bfcache-guard';
 import { Brand } from '../../components/brand';
 import { LogoutButton } from '../../components/logout-button';
+import { SearchBox } from '../../components/search-box';
 import { requireSession } from '../../lib/server-api';
 
 /**
@@ -15,7 +16,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       <BfcacheGuard />
       <header className="sticky top-0 z-20 border-b border-line bg-bg-1">
-        <div className="mx-auto flex min-h-10 max-w-6xl items-center gap-4 px-4">
+        <div className="mx-auto flex min-h-10 max-w-6xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-1.5">
           <Link
             href="/portfolio"
             aria-label="VANTAGE, go to portfolio"
@@ -24,6 +25,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <Brand />
           </Link>
           <AppNav />
+          {/* a full-width second row on phones, the middle of the top bar from 768 px */}
+          <div className="order-last w-full md:order-none md:flex md:w-auto md:flex-1 md:justify-center">
+            <SearchBox />
+          </div>
           <div className="ml-auto flex items-center gap-3">
             <span
               data-testid="user-name"

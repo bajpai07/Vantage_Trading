@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type { QuoteItem } from '@vantage/contracts';
 import { freshness } from '@vantage/market-model';
 import type { FreshnessState, InstrumentStatus, MarketState, Quote } from '@vantage/market-model';
-import { parse } from '@vantage/money';
+import { parse, sub } from '@vantage/money';
 import { CLOCK, QUOTE_STORE } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
 import { FeedInfoService } from '../feed/feed.module.js';
@@ -105,6 +105,7 @@ export class QuoteService {
         asOf: quote.providerTs.toISOString(),
         bid: price(quote.bid),
         ask: price(quote.ask),
+        spread: sub(parse(quote.ask), parse(quote.bid)).toCanonicalString(),
         ...(quote.last === undefined ? {} : { last: price(quote.last) }),
         ...(quote.gapConfirmed === true ? { gapConfirmed: true as const } : {}),
       });

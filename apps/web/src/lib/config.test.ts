@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_API_BASE_URL, DEFAULT_POLL_MS, WebConfigError, loadWebConfig } from './config';
+import {
+  DEFAULT_API_BASE_URL,
+  DEFAULT_POLL_MS,
+  DEFAULT_QUOTE_POLL_MS,
+  WebConfigError,
+  loadWebConfig,
+} from './config';
 
 function fail(env: Record<string, string | undefined>): WebConfigError {
   try {
@@ -17,6 +23,7 @@ describe('loadWebConfig', () => {
       appEnv: 'local',
       apiBaseUrl: DEFAULT_API_BASE_URL,
       portfolioPollMs: DEFAULT_POLL_MS,
+      quotePollMs: DEFAULT_QUOTE_POLL_MS,
       trustForwardedFor: true,
     });
     expect(DEFAULT_POLL_MS).toBe(15_000);
@@ -28,11 +35,13 @@ describe('loadWebConfig', () => {
         APP_ENV: 'test',
         API_BASE_URL: 'http://localhost:4100',
         PORTFOLIO_POLL_MS: '2000',
+        QUOTE_POLL_MS: '1500',
       }),
     ).toEqual({
       appEnv: 'test',
       apiBaseUrl: 'http://localhost:4100',
       portfolioPollMs: 2000,
+      quotePollMs: 1500,
       trustForwardedFor: true,
     });
   });
@@ -61,6 +70,9 @@ describe('loadWebConfig', () => {
     ['PORTFOLIO_POLL_MS', '999'],
     ['PORTFOLIO_POLL_MS', '300001'],
     ['PORTFOLIO_POLL_MS', 'fast'],
+    ['QUOTE_POLL_MS', '999'],
+    ['QUOTE_POLL_MS', '60001'],
+    ['QUOTE_POLL_MS', 'soon'],
     ['PORTFOLIO_POLL_MS', '1.5'],
     ['APP_ENV', 'nope-xyz'],
   ])('rejects %s=%s by name and rule, and never echoes the value', (name, value) => {
