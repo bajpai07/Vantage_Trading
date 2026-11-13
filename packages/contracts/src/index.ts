@@ -74,3 +74,4 @@ export type ErrorEnvelope = z.output<typeof ErrorEnvelope>;
 
 export * from './market.js';
 export * from './orders.js';
+export * from './portfolio.js';

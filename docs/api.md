@@ -238,3 +238,157 @@ First failing rule wins (the order of this list). Details: [trading.md](trading.
 - Every first placement writes an `audit_logs` row `ORDER_PLACED` (actor, order id, outcome and reject code, request id, IP). Request bodies, cookies and keys are never logged. If the audit insert fails it is logged and swallowed (the order stands), as for the M2 audit events.
 - `TRADING_ENABLED` (config; default `true` for local and test, **must be set explicitly** in staging and production): when `false` every new order is stored as `REJECTED` with `TRADING_PAUSED`.
 - Delayed quotes are executable (`allow_execution_on_delayed` is true in the MVP, TRADING_ENGINE section 3, D-09); `STALE`, `CLOSED` and `UNAVAILABLE` are not.
+
+## Portfolio, history and activity (M5, read side)
+
+All routes need a valid session and answer for the session user's own MAIN account only: **there is no account id in any URL, query or body**, and another user's rows are never reachable. They are read-only (no ledger write; the only table the job writes is `equity_snapshots`). Money amounts are decimal strings **rounded to 2 decimals, HALF_EVEN, only at the API edge**; every object with rounded amounts has an `exact` companion with the full-precision values. Prices (`avgCost`, `mark`, `price`) are canonical and never rounded. Definitions and honesty rules: [portfolio.md](portfolio.md).
+
+| Method and path                     | Success                          | Notes                                                                                         |
+| ----------------------------------- | -------------------------------- | --------------------------------------------------------------------------------------------- |
+| `GET /v1/portfolio`                 | `200` `PortfolioResponse`        | Cash, positions valued at the bid with freshness labels, realised and unrealised P&L, equity. |
+| `GET /v1/portfolio/history?from&to` | `200 { snapshots }`              | Daily equity snapshots, oldest first, **at most 366 rows**.                                   |
+| `GET /v1/executions`                | `200 { executions, nextCursor }` | Newest first, cursor pagination, optional `symbol` filter.                                    |
+| `GET /v1/ledger/activity`           | `200 { activity, nextCursor }`   | The user's own ledger transactions in plain language, newest first, cursor pagination.        |
+
+### GET /v1/portfolio
+
+One consistent read: cash, the ledger totals, positions and lot cost bases come from a single `REPEATABLE READ`, read-only transaction (D-63), so cash and lots never disagree inside one answer. Marks are then taken from the quote store with the shared freshness function.
+
+```json
+{
+  "currency": "USD",
+  "cash": "8099.60",
+  "positionsValue": "1950.00",
+  "costBasis": "1900.40",
+  "unrealisedPnl": "49.60",
+  "realisedPnl": "0.00",
+  "fees": "0.00",
+  "equity": "10049.60",
+  "initialCapital": "10000.00",
+  "totalReturn": "49.60",
+  "incomplete": false,
+  "unvaluedCount": 0,
+  "positions": [
+    {
+      "symbol": "AAPL",
+      "qty": "10",
+      "avgCost": "190.04",
+      "costBasis": "1900.40",
+      "valuation": "VALUED",
+      "unavailableReason": null,
+      "mark": "195.00",
+      "markBasis": "BID",
+      "marketValue": "1950.00",
+      "unrealisedPnl": "49.60",
+      "quote": { "freshness": "DELAYED", "asOf": "2026-11-10T14:45:00.000Z", "source": "FIXTURE" },
+      "exact": { "costBasis": "1900.40", "marketValue": "1950.00", "unrealisedPnl": "49.60" }
+    }
+  ],
+  "asOf": "2026-11-10T14:45:00.000Z",
+  "generatedAt": "2026-11-10T15:00:00.000Z",
+  "exact": { "cash": "8099.60", "equity": "10049.60", "totalReturn": "49.60" }
+}
+```
+
+(`exact` repeats every total at full precision; shortened here.)
+
+- `mark` is the **bid** (`markBasis: "BID"`); only when there is no positive bid is the last price used (`"LAST"`). The ask is never a mark.
+- `quote.freshness` is `REAL_TIME`, `DELAYED`, `STALE`, `CLOSED` or `UNAVAILABLE`, from the shared market-model function. A STALE quote is still valued but labelled `STALE`; a CLOSED market uses the last bid, labelled `CLOSED`, with `quote.asOf` shown.
+- **No usable quote:** `valuation: "UNAVAILABLE"` with `unavailableReason` (`NO_QUOTE` or `NO_USABLE_PRICE`), and `mark`, `marketValue` and `unrealisedPnl` are `null`. The position is **excluded** from `positionsValue`, `unrealisedPnl`, `equity`, and the response says so: `incomplete: true`, `unvaluedCount`, and `totalReturn: null`. It is never valued at zero and never silently at cost. `costBasis` (total) still includes it, so the books reconcile.
+- `equity = cash + positionsValue` (valued positions only). `totalReturn = equity - initialCapital`, only when every position is valued.
+- `realisedPnl` = minus the `REALIZED_PNL` ledger balance (equals the sum of the lot closures' trading P&L, gross of fees); `fees` = the `FEES` ledger balance. The identity `cash + costBasis + fees - realisedPnl = initialCapital` holds at every read.
+- `asOf` is the oldest quote timestamp used for a valuation (`null` when nothing was valued); `generatedAt` is server time.
+- Day change is not reported (it needs prior-close data, M3b).
+
+### GET /v1/portfolio/history
+
+Query `from` and `to` (`YYYY-MM-DD`, inclusive, real dates, `from` not after `to`, at most 366 days apart; defaults: `to` = today UTC, `from` = `to` minus 365 days). Response:
+
+```json
+{
+  "snapshots": [
+    {
+      "date": "2026-11-10",
+      "cash": "8099.60",
+      "positionsValue": "1950.00",
+      "equity": "10049.60",
+      "valuedComplete": true,
+      "quoteAsOf": "2026-11-10T20:45:00.000Z",
+      "exact": { "cash": "8099.60", "positionsValue": "1950.00", "equity": "10049.60" }
+    }
+  ]
+}
+```
+
+`valuedComplete: false` means at least one position could not be valued that day; `positionsValue` and `equity` then exclude it (same rule as the portfolio). Snapshots are written by the in-process job after each NYSE close (see portfolio.md).
+
+### GET /v1/executions
+
+Query: `limit` (1 to 100, default 50), `cursor` (opaque, from `nextCursor`), `symbol`. Newest first by `(executedAt, id)`.
+
+```json
+{
+  "executions": [
+    {
+      "id": "0198d0d0-…",
+      "orderId": "0198d0d0-…",
+      "symbol": "AAPL",
+      "side": "SELL",
+      "qty": "6",
+      "price": "194.96",
+      "notional": "1169.76",
+      "fee": "0.00",
+      "slippageBps": "2",
+      "executedAt": "2026-11-10T15:00:00.000Z",
+      "quote": {
+        "bid": "195.00",
+        "ask": "195.05",
+        "last": null,
+        "asOf": "2026-11-10T14:45:00.000Z",
+        "source": "FIXTURE",
+        "entitlement": "DELAYED"
+      },
+      "realisedPnl": "29.52",
+      "exact": { "notional": "1169.76", "fee": "0.00", "realisedPnl": "29.52" }
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`realisedPnl` is, for a SELL, the trading P&L of the lots it closed (gross of fees, from `lot_closures`); for a BUY it is `null`.
+
+### GET /v1/ledger/activity
+
+Query: `limit`, `cursor`. Each item is one ledger transaction of the caller's account:
+
+```json
+{
+  "activity": [
+    {
+      "id": "0198d0d0-…",
+      "kind": "FILL",
+      "title": "Trade",
+      "description": "SELL 6 AAPL @ 194.96",
+      "createdAt": "2026-11-10T15:00:00.123Z",
+      "cashEffect": "1169.76",
+      "orderId": "0198d0d0-…",
+      "exact": { "cashEffect": "1169.76" }
+    }
+  ],
+  "nextCursor": null
+}
+```
+
+`kind` is one of `GRANT`, `COMPETITION_GRANT`, `FILL`, `FEE`, `ORDER_RESERVE`, `ORDER_RELEASE`, `CORPORATE_ACTION`, `ADJUSTMENT`; `title` is the plain-language label ("Starting capital", "Trade", ...); `cashEffect` is the signed change of the cash balance (negative when cash went out); `orderId` links a trade to its order. **No ledger account ids, entry ids or other accounts' data are returned**; only the transaction's own id.
+
+### Pagination and errors
+
+Cursors are positions `(timestamp, id)` inside the caller's own result set: rows inserted between two page reads never cause a duplicate or a skip of rows further down the list, and a cursor from another user only ever shows the reader's own older rows. Errors use the standard envelope:
+
+| HTTP | code                | When                                                                                             |
+| ---- | ------------------- | ------------------------------------------------------------------------------------------------ |
+| 400  | `VALIDATION_ERROR`  | Bad `limit`, `cursor`, `symbol`, date or range; unknown query parameter (such as an account id). |
+| 401  | `UNAUTHENTICATED`   | No or invalid session.                                                                           |
+| 404  | `ACCOUNT_NOT_FOUND` | The user has no MAIN account.                                                                    |
+| 500  | `INTERNAL_ERROR`    | Unexpected failure (request id only; nothing is written by these routes).                        |

@@ -11,6 +11,7 @@ import type {
 } from '@vantage/contracts';
 import type { InstrumentStatus } from '@vantage/market-model';
 import { parse } from '@vantage/money';
+import { decodeCursor, encodeCursor } from '../../common/cursor.js';
 import { AppError } from '../../common/errors.js';
 import { newId } from '../../ids.js';
 import type { Logger } from '../../log.js';
@@ -157,32 +158,6 @@ function fromResult(result: ExecutionResult, cmd: MarketOrderCommand): OrderResp
           }
         : null,
   });
-}
-
-interface CursorPayload {
-  readonly t: string;
-  readonly id: string;
-}
-const CURSOR_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{6}Z$/;
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-
-const encodeCursor = (p: CursorPayload): string =>
-  Buffer.from(JSON.stringify([p.t, p.id]), 'utf8').toString('base64url');
-
-function decodeCursor(cursor: string): CursorPayload {
-  const bad = (): AppError => new AppError(400, 'VALIDATION_ERROR', 'Invalid request: cursor');
-  try {
-    const v: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
-    if (Array.isArray(v) && v.length === 2) {
-      const [t, id] = v as unknown[];
-      if (typeof t === 'string' && typeof id === 'string' && CURSOR_TIME.test(t) && UUID.test(id)) {
-        return { t, id };
-      }
-    }
-  } catch {
-    // fall through
-  }
-  throw bad();
 }
 
 export const orderNotFound = (): AppError =>

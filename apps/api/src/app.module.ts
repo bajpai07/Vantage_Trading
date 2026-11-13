@@ -11,6 +11,7 @@ import { InstrumentsModule } from './modules/instruments/instruments.module.js';
 import { LedgerModule } from './modules/ledger/ledger.service.js';
 import { MarketDataModule } from './modules/market-data/market-data.module.js';
 import { OrdersModule } from './modules/orders/orders.module.js';
+import { PortfolioModule } from './modules/portfolio/portfolio.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { WatchlistsModule } from './modules/watchlists/watchlists.module.js';
 
@@ -30,6 +31,7 @@ import { WatchlistsModule } from './modules/watchlists/watchlists.module.js';
     MarketDataModule,
     WatchlistsModule,
     OrdersModule,
+    PortfolioModule,
   ],
 })
 export class AppModule {}
