@@ -8,11 +8,8 @@ const secureTransport = config.appEnv === 'staging' || config.appEnv === 'produc
 const nextConfig: NextConfig = {
   poweredByHeader: false,
   reactStrictMode: true,
-  // D-65: the browser talks to the API same-origin through this proxy, so the vantage_session cookie stays httpOnly
-  // and SameSite=Lax, the API's Origin-header CSRF check keeps working, and no CORS is opened on the API.
-  async rewrites() {
-    return [{ source: '/api/:path*', destination: `${config.apiBaseUrl}/:path*` }];
-  },
+  // D-65: the browser reaches the API only through the same-origin proxy route (src/app/api/[...path]/route.ts),
+  // which reads API_BASE_URL at request time.
   // D-68: the strict, nonce-based Content-Security-Policy is set per request in src/proxy.ts. These are the
   // static security headers.
   async headers() {

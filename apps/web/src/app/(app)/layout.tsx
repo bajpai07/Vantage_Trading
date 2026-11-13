@@ -1,0 +1,43 @@
+import Link from 'next/link';
+import { AppNav } from '../../components/app-nav';
+import { BfcacheGuard } from '../../components/bfcache-guard';
+import { Brand } from '../../components/brand';
+import { LogoutButton } from '../../components/logout-button';
+import { requireSession } from '../../lib/server-api';
+
+/**
+ * Everything under (app) is private. The session is checked here on the server for every request (D-66): without
+ * one the visitor is redirected to the login page before any private page is rendered.
+ */
+export default async function AppLayout({ children }: { children: React.ReactNode }) {
+  const me = await requireSession();
+  return (
+    <>
+      <BfcacheGuard />
+      <header className="sticky top-0 z-20 border-b border-line bg-bg-1">
+        <div className="mx-auto flex min-h-10 max-w-6xl items-center gap-4 px-4">
+          <Link
+            href="/portfolio"
+            aria-label="VANTAGE, go to portfolio"
+            className="text-text-0 hover:text-text-0"
+          >
+            <Brand />
+          </Link>
+          <AppNav />
+          <div className="ml-auto flex items-center gap-3">
+            <span
+              data-testid="user-name"
+              className="hidden max-w-40 truncate text-[12px] text-text-2 sm:inline"
+            >
+              {me.displayName}
+            </span>
+            <LogoutButton />
+          </div>
+        </div>
+      </header>
+      <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-4 md:pb-6">
+        {children}
+      </main>
+    </>
+  );
+}
