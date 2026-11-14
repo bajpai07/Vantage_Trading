@@ -70,10 +70,10 @@ pnpm install --frozen-lockfile
 pnpm db:up ; pnpm db:migrate
 pnpm --filter web exec playwright install chromium      # once: downloads the browser (about 120 MB)
 pnpm --filter web build                                  # the e2e server runs the production build
-pnpm --filter web test:e2e                               # 75 tests, about 3 minutes
+pnpm --filter web test:e2e                               # runs both profiles: 80 tests, about 3.5 minutes
 ```
 
-Ports used (so a running dev server is not disturbed): web 3100, API 4100, control 4101. The run creates one `t_*` database and drops it at the end (`pnpm test:cleanup` removes strays after a crash). Failure traces and screenshots go to `apps/web/test-results/` (git-ignored); the screenshots in `docs/phase-reports/m6a/` and `m6b/` are written by the specs. The test API also has two test-only control endpoints, `POST /reconcile` (the API's own zero-tolerance reconciliation) and `POST /counts` (orders and executions of a user), used to prove "exactly one order" and clean books.
+Ports used (so a running dev server is not disturbed): web 3100, API 4100, control 4101. `test:e2e` runs two profiles one after the other (`e2e/run-all.mjs`): the default NYSE session, and `E2E_PROFILE=always-open` (`SIM_SESSION=ALWAYS_OPEN`, ports 3200, 4200, 4201, only `always-open.spec.ts`: the "Simulated 24/7 session" banner and a stock traded at a weekend instant; its NYSE control is in `sim-feed.spec.ts`). `pnpm --filter web test:e2e:default` runs only the default profile. The run creates one `t_*` database and drops it at the end (`pnpm test:cleanup` removes strays after a crash). Failure traces and screenshots go to `apps/web/test-results/` (git-ignored); the screenshots in `docs/phase-reports/m6a/` and `m6b/` are written by the specs. The test API also has two test-only control endpoints, `POST /reconcile` (the API's own zero-tolerance reconciliation) and `POST /counts` (orders and executions of a user), used to prove "exactly one order" and clean books.
 
 ## Search, instrument page and order ticket (M6b)
 
@@ -106,6 +106,10 @@ The state machine is `lib/ticket.ts` (pure, unit-tested); `components/order-tick
 ### Keyboard, focus and motion
 
 Everything works with the keyboard: `/` to search, Enter to review and to confirm. The dialogs are native `<dialog>` elements opened with `showModal()`: focus moves to the dialog heading, Tab stays inside, Escape closes, and results are announced (`aria-live`). Buttons are 44 px high on a phone. Pulses respect `prefers-reduced-motion`.
+
+## Day change (M7b, D-82)
+
+The quote panel has a **Change** card and each search result a compact percentage. Both are the API's strings (`change`, `changePct`, `changeBasis`); `lib/change.ts` only assembles text with string operations (ESLint bans number conversion and arithmetic there and in `change-cell.tsx`): "+3,364.25 (+4.67%)", "−3.61 (−1.89%)" (a real minus sign), "0.00 (0.00%)". Sign, a ▲ or ▼ glyph and a screen-reader word accompany the colour (never colour alone); zero has no arrow. The basis is shown as a label and a tooltip: **"vs previous close"** (stocks on the real calendar) or **"24h"** (crypto and the simulated 24/7 session). No prior data renders "—" with "no prior close yet", never 0. Search results ask `/v1/quotes` once per search for the visible symbols; if that fails the percentage is simply left out.
 
 ## Honesty rules (and where each is enforced)
 

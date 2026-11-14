@@ -300,7 +300,7 @@ describe('crypto-only accounts (display-only until M8; the instrument is opened 
 
   it('with the crypto feed off there is no candle price, so the day is INCOMPLETE rather than guessed', async () => {
     const on = await createOrdersHarness(db, { now: '2026-11-20T15:00:00.000Z', env: SIM_ENV });
-    let accountId = '';
+    let accountId: string;
     try {
       await db.migrator.query(
         `UPDATE instruments SET tradable_in = '{MVP}' WHERE symbol = 'DOGE-USD'`,
