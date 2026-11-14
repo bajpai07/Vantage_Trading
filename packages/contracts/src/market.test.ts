@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
   AddWatchlistItemRequest,
+  CandleItem,
+  CandlesQuery,
+  CandlesResponse,
   CreateWatchlistRequest,
   FeedInfoResponse,
   InstrumentItem,
@@ -170,5 +173,83 @@ describe('FeedInfoResponse (M7a: per-source labelling, D-75)', () => {
     const noSources: Record<string, unknown> = { ...feed };
     delete noSources.sources;
     expect(FeedInfoResponse.safeParse(noSources).success).toBe(false);
+  });
+});
+
+describe('candles contracts (M7b)', () => {
+  const ok = { symbol: 'aapl', interval: '1h' };
+
+  it('the query: symbol upper-cased, optional ISO range and limit (a string becomes a whole number 1 to 500)', () => {
+    const q = CandlesQuery.parse({
+      ...ok,
+      from: '2026-11-10T12:00:00Z',
+      to: '2026-11-10T13:00:00.500Z',
+      limit: '500',
+    });
+    expect(q).toMatchObject({ symbol: 'AAPL', interval: '1h', limit: 500 });
+    expect(CandlesQuery.parse(ok)).toEqual({ symbol: 'AAPL', interval: '1h' });
+  });
+
+  it.each([
+    ['an interval that does not exist', { ...ok, interval: '2m' }],
+    ['limit 0', { ...ok, limit: '0' }],
+    ['limit 501', { ...ok, limit: '501' }],
+    ['limit with a sign or a decimal', { ...ok, limit: '-5' }],
+    ['limit with a decimal', { ...ok, limit: '1.5' }],
+    ['from after to', { ...ok, from: '2026-11-10T14:00:00Z', to: '2026-11-10T13:00:00Z' }],
+    ['a date without a zone', { ...ok, from: '2026-11-10T12:00:00' }],
+    ['a date that is not a date', { ...ok, to: 'now' }],
+    ['an unknown field', { ...ok, extra: '1' }],
+  ])('the query refuses %s', (_n, q) => {
+    expect(CandlesQuery.safeParse(q).success).toBe(false);
+  });
+
+  it('from equal to to is allowed (one candle open time)', () => {
+    expect(
+      CandlesQuery.safeParse({ ...ok, from: '2026-11-10T12:00:00Z', to: '2026-11-10T12:00:00Z' })
+        .success,
+    ).toBe(true);
+  });
+
+  const candle = {
+    t: '2026-11-10T12:00:00.000Z',
+    o: '75642.67',
+    h: '76043.14',
+    l: '75461.79',
+    c: '75935.95',
+    v: '28.77612500',
+    closed: true,
+  };
+  it('a candle carries canonical decimal strings and the forming flag', () => {
+    expect(CandleItem.safeParse(candle).success).toBe(true);
+    for (const bad of [
+      { ...candle, o: 75642.67 },
+      { ...candle, h: '1' },
+      { ...candle, v: '-1' },
+      { ...candle, closed: 'yes' },
+      { ...candle, extra: 1 },
+    ]) {
+      expect(CandleItem.safeParse(bad).success, JSON.stringify(bad)).toBe(false);
+    }
+  });
+
+  it('a response is never without a source label, and says whether it is synthetic', () => {
+    const body = {
+      symbol: 'BTC-USD',
+      interval: '1h',
+      source: 'SIM',
+      synthetic: true,
+      truncated: false,
+      candles: [candle],
+    };
+    expect(CandlesResponse.safeParse(body).success).toBe(true);
+    expect(CandlesResponse.safeParse({ ...body, source: '' }).success).toBe(false);
+    const noSource: Record<string, unknown> = { ...body };
+    delete noSource.source;
+    expect(CandlesResponse.safeParse(noSource).success).toBe(false);
+    expect(
+      CandlesResponse.safeParse({ ...body, candles: Array.from({ length: 501 }, () => candle) })
+        .success,
+    ).toBe(false);
   });
 });

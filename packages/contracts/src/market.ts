@@ -89,6 +89,73 @@ export type QuoteItem = z.output<typeof QuoteItem>;
 export const QuotesResponse = z.strictObject({ quotes: z.array(QuoteItem).min(1).max(50) });
 export type QuotesResponse = z.output<typeof QuotesResponse>;
 
+// ---- candles (M7b, D-79 to D-81) ----------------------------------------------------------------------
+
+export const CANDLE_INTERVALS = ['1m', '5m', '15m', '1h', '4h', '1d'] as const;
+export const CandleInterval = z.enum(CANDLE_INTERVALS);
+export type CandleInterval = z.output<typeof CandleInterval>;
+
+/** Most candles in one answer; the default when `limit` is not given is 200. */
+export const MAX_CANDLES_PER_REQUEST = 500;
+export const DEFAULT_CANDLES_PER_REQUEST = 200;
+
+const isoInstant = z.iso.datetime({
+  message: 'must be an ISO 8601 instant in UTC, for example 2026-11-10T15:00:00Z',
+});
+
+/**
+ * GET /v1/market/candles. `from` and `to` bound the OPEN TIME of a candle (inclusive); nothing after "now" is ever served.
+ * Without them the answer is the latest `limit` candles ending now.
+ */
+export const CandlesQuery = z
+  .strictObject({
+    symbol: SymbolSchema,
+    interval: CandleInterval,
+    from: isoInstant.optional(),
+    to: isoInstant.optional(),
+    limit: z
+      .string()
+      .regex(/^[0-9]{1,4}$/, 'must be a whole number')
+      .transform(Number)
+      .pipe(z.number().int().min(1).max(MAX_CANDLES_PER_REQUEST))
+      .optional(),
+  })
+  .refine(
+    (q) => q.from === undefined || q.to === undefined || Date.parse(q.from) <= Date.parse(q.to),
+    {
+      message: 'from must not be after to',
+      path: ['from'],
+    },
+  );
+export type CandlesQuery = z.output<typeof CandlesQuery>;
+
+/** One candle. Prices and volume are decimal strings; `t` is the open time. `closed: false` marks the forming candle. */
+export const CandleItem = z.strictObject({
+  t: z.iso.datetime(),
+  o: MoneyString,
+  h: MoneyString,
+  l: MoneyString,
+  c: MoneyString,
+  /** Volume: synthetic for simulated data (see `synthetic`). */
+  v: z.string().regex(/^[0-9]+(\.[0-9]+)?$/, 'must be a decimal string'),
+  closed: z.boolean(),
+});
+export type CandleItem = z.output<typeof CandleItem>;
+
+export const CandlesResponse = z.strictObject({
+  symbol: z.string(),
+  interval: CandleInterval,
+  /** The label of the data behind the candles (SIM). A candle answer is never served without one. */
+  source: z.string().min(1),
+  /** true: the candles and their volume are simulated, not market data. */
+  synthetic: z.boolean(),
+  /** true when more candles matched than `limit`: the NEWEST `limit` are returned. */
+  truncated: z.boolean(),
+  /** Ascending by open time. */
+  candles: z.array(CandleItem).max(MAX_CANDLES_PER_REQUEST),
+});
+export type CandlesResponse = z.output<typeof CandlesResponse>;
+
 // ---- market status ---------------------------------------------------------------------------------
 
 export const MarketStatusItem = z.strictObject({

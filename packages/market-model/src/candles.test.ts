@@ -482,7 +482,8 @@ function childrenOf(
   dayEnd: number,
 ): Candle[] {
   const span = CANDLE_INTERVAL_SECONDS[parentInterval];
-  const from = sessions.kind === 'CALENDAR' && parentInterval === '1d' ? parent.t : parent.t;
+  // a daily candle of a session starts at the open (14:30Z), but the hourly candle that covers it has the aligned open time 14:00Z
+  const from = sessions.kind === 'CALENDAR' && parentInterval === '1d' ? parent.t - 3600 : parent.t;
   const to = sessions.kind === 'CALENDAR' && parentInterval === '1d' ? dayEnd : parent.t + span - 1;
   return candles(symbol, finer, iso(from), iso(to), { sessions, gaps }).candles;
 }
@@ -540,7 +541,7 @@ describe('aggregation', () => {
         for (const p of parents) {
           const dayEnd =
             sessions.kind === 'CALENDAR'
-              ? p.t + 86399
+              ? p.t + 8 * 3600 // the session ends within 8 hours of its open
               : p.t + CANDLE_INTERVAL_SECONDS[parentInterval] - 1;
           const kids = childrenOf(symbol, p, parentInterval, '1h', sessions, gaps, dayEnd);
           const a = aggregate(kids);

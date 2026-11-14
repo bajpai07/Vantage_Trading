@@ -24,3 +24,5 @@ export const ORDER_HOOKS = Symbol('ORDER_HOOKS');
 
 /** Per-user limiter for POST /v1/orders/preview (in memory). */
 export const ORDER_PREVIEW_LIMITER = Symbol('ORDER_PREVIEW_LIMITER');
+export const CANDLE_PROVIDER = Symbol('CANDLE_PROVIDER');
+export const CANDLES_LIMITER = Symbol('CANDLES_LIMITER');

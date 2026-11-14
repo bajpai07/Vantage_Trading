@@ -96,9 +96,9 @@ export interface BuildCandlesInput {
   readonly seed: string;
   readonly instrument: CandleInstrument;
   readonly interval: CandleInterval;
-  /** Inclusive lower bound on a candle's first instant (epoch seconds); null = as far back as there is history. */
+  /** Inclusive lower bound on a candle's open time t (epoch seconds); null = as far back as there is history. */
   readonly from: number | null;
-  /** Inclusive upper bound on a candle's first instant; null = now. Nothing after `now` is ever produced. */
+  /** Inclusive upper bound on a candle's open time t; null = now. Nothing that begins after `now` is ever produced. */
   readonly to: number | null;
   /** 1 to MAX_CANDLES. When more candles match, the newest `limit` are returned and `truncated` is true. */
   readonly limit: number;
@@ -176,6 +176,7 @@ function calendarSegments(
   intervalName: CandleInterval,
   lower: number,
   upper: number,
+  now: number,
   need: number,
 ): Segment[] {
   const out: Segment[] = [];
@@ -191,7 +192,8 @@ function calendarSegments(
       const segs = sessionSegments(sessions[i] as TradingSession, intervalName);
       for (let j = segs.length - 1; j >= 0 && out.length < need; j -= 1) {
         const g = segs[j] as Segment;
-        if (g.start <= upper && g.start >= lower) out.push(g);
+        // selected by the reported open time t; a candle whose clipped first instant is still in the future has not begun
+        if (g.t <= upper && g.t >= lower && g.start <= now) out.push(g);
       }
     }
     endDate = previousDate(startDate);
@@ -271,8 +273,8 @@ function volumeString(units: number, dp: number): string {
 // ---- the candles ------------------------------------------------------------------------------------------------------
 
 /**
- * Builds the candles for a request. Candles are selected by their FIRST instant being within [from, to] (and not after
- * `now`); the newest `limit` of them are returned, oldest first. See the header for the price, volume and session rules.
+ * Builds the candles for a request. Candles are selected by their reported OPEN TIME t being within [from, to] (and
+ * the candle having begun by `now`); the newest `limit` of them are returned, oldest first. See the header for the price, volume and session rules.
  */
 export function buildCandles(input: BuildCandlesInput): BuildCandlesResult {
   const { instrument, interval, now } = input;
@@ -284,7 +286,7 @@ export function buildCandles(input: BuildCandlesInput): BuildCandlesResult {
   const found =
     input.sessions.kind === 'CONTINUOUS'
       ? continuousSegments(ivSec, lower, upper, need)
-      : calendarSegments(input.sessions.calendar, interval, lower, upper, need);
+      : calendarSegments(input.sessions.calendar, interval, lower, upper, now, need);
   const truncated = found.length > input.limit;
   const chosen = found.slice(0, input.limit).reverse(); // oldest first
 

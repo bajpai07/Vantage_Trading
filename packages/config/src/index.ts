@@ -47,6 +47,11 @@ export interface Config {
   /** Order previews one user may request per minute (D-70, in memory, per process). */
   readonly orderPreviewRateLimitPerMinute: number;
   /**
+   * Candle requests one user may make per minute, in cost points (M7b): a request costs more the more work it can need
+   * (a maximum-size daily request costs 8), so many cheap requests or a few expensive ones both fit (in memory, per process).
+   */
+  readonly candlesRateLimitPerMinute: number;
+  /**
    * D-69: the proxies whose X-Forwarded-For header may be believed. Empty (the default) trusts nobody: the client
    * address is the socket address.
    */
@@ -149,6 +154,7 @@ const appSchema = z.object({
   TRADING_ENABLED: z.enum(['true', 'false'], { error: 'must be true or false' }),
   ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
   ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'previews per user per minute'),
+  CANDLES_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'candle cost points per user per minute'),
   CRYPTO_FEED: z.enum(CRYPTO_FEEDS, { error: `must be one of: ${CRYPTO_FEEDS.join(', ')}` }),
   SIM_SESSION: z.enum(SIM_SESSIONS, { error: `must be one of: ${SIM_SESSIONS.join(', ')}` }),
   DEMO_MODE: z.enum(['true', 'false'], { error: 'must be true or false' }),
@@ -182,6 +188,7 @@ export function loadConfig(env: Env): Config {
       (env.APP_ENV === 'local' || env.APP_ENV === 'test' ? 'true' : undefined),
     ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
     ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: env.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE ?? '60',
+    CANDLES_RATE_LIMIT_PER_MINUTE: env.CANDLES_RATE_LIMIT_PER_MINUTE ?? '120',
     CRYPTO_FEED: env.CRYPTO_FEED ?? 'off',
     SIM_SESSION: env.SIM_SESSION ?? 'NYSE',
     DEMO_MODE: env.DEMO_MODE ?? 'false',
@@ -304,6 +311,7 @@ export function loadConfig(env: Env): Config {
     tradingEnabled: app.data.TRADING_ENABLED === 'true',
     orderRateLimitPerMinute: app.data.ORDER_RATE_LIMIT_PER_MINUTE,
     orderPreviewRateLimitPerMinute: app.data.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE,
+    candlesRateLimitPerMinute: app.data.CANDLES_RATE_LIMIT_PER_MINUTE,
     trustedProxies,
   };
 }

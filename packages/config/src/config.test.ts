@@ -321,3 +321,16 @@ describe('simulated feed settings (M7a: D-74, D-76, D-77)', () => {
     if (value.length > 3) expect(e.message).not.toContain(value);
   });
 });
+
+describe('candle request allowance (M7b)', () => {
+  it('CANDLES_RATE_LIMIT_PER_MINUTE defaults to 120 and is a bounded whole number', () => {
+    expect(loadConfig(buildTestEnv()).candlesRateLimitPerMinute).toBe(120);
+    expect(
+      loadConfig(buildTestEnv({ CANDLES_RATE_LIMIT_PER_MINUTE: '20' })).candlesRateLimitPerMinute,
+    ).toBe(20);
+    for (const v of ['0', '100001', 'many', '1.5', '']) {
+      const e = fail(buildTestEnv({ CANDLES_RATE_LIMIT_PER_MINUTE: v }));
+      expect(e.issues.map((i) => i.name)).toContain('CANDLES_RATE_LIMIT_PER_MINUTE');
+    }
+  });
+});
