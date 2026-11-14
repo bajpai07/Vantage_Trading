@@ -253,3 +253,68 @@ describe('candles contracts (M7b)', () => {
     ).toBe(false);
   });
 });
+
+describe('quote day-change fields (M7b, D-82)', () => {
+  const base = {
+    symbol: 'AAPL',
+    known: true,
+    freshness: 'REAL_TIME',
+    source: 'SIM',
+    entitlement: 'REAL_TIME',
+    delaySeconds: 0,
+    ageSeconds: 0,
+    asOf: '2026-11-10T15:00:00.000Z',
+    bid: '187.05',
+    ask: '187.06',
+    last: '187.05',
+    spread: '0.01',
+  };
+  const change = {
+    prevClose: '190.66',
+    change: '-3.61',
+    changePct: '-1.89',
+    changeBasis: 'PREV_SESSION_CLOSE',
+    changeOf: 'LAST',
+  };
+
+  it('accepts the strings, accepts all-null (no prior data) and accepts their absence (older answers)', () => {
+    expect(QuoteItem.safeParse({ ...base, ...change }).success).toBe(true);
+    expect(
+      QuoteItem.safeParse({
+        ...base,
+        prevClose: null,
+        change: null,
+        changePct: null,
+        changeBasis: null,
+        changeOf: null,
+      }).success,
+    ).toBe(true);
+    expect(QuoteItem.safeParse(base).success).toBe(true);
+  });
+
+  it.each([
+    ['a number instead of a string', { ...change, change: -3.61 }],
+    ['a percentage without two decimals', { ...change, changePct: '-1.9' }],
+    ['a percentage with a percent sign', { ...change, changePct: '-1.89%' }],
+    ['an unknown basis', { ...change, changeBasis: 'YESTERDAY' }],
+    ['an unknown "of"', { ...change, changeOf: 'BID' }],
+  ])('refuses %s', (_n, bad) => {
+    expect(QuoteItem.safeParse({ ...base, ...bad }).success).toBe(false);
+  });
+
+  it('an UNAVAILABLE quote carries no day change, like no price', () => {
+    const unavailable = {
+      symbol: 'AAPL',
+      known: true,
+      freshness: 'UNAVAILABLE',
+      source: 'SIM',
+      entitlement: 'REAL_TIME',
+      delaySeconds: 0,
+      ageSeconds: null,
+      asOf: null,
+    };
+    expect(QuoteItem.safeParse(unavailable).success).toBe(true);
+    expect(QuoteItem.safeParse({ ...unavailable, ...change }).success).toBe(false);
+    expect(QuoteItem.safeParse({ ...unavailable, prevClose: null }).success).toBe(false);
+  });
+});

@@ -222,9 +222,10 @@ export class PortfolioService {
       equity: string;
       valued_complete: boolean;
       quote_asof: Date | null;
+      mark_source: string | null;
     }>(
       `SELECT to_char(s.snapshot_date, 'YYYY-MM-DD') AS snapshot_date, s.cash, s.positions_value, s.equity,
-              s.valued_complete, s.quote_asof
+              s.valued_complete, s.quote_asof, s.mark_source
          FROM equity_snapshots s
          JOIN accounts a ON a.id = s.account_id
         WHERE a.user_id = $1::uuid AND a.kind = 'MAIN'
@@ -241,6 +242,7 @@ export class PortfolioService {
         equity: display(x.equity),
         valuedComplete: x.valued_complete,
         quoteAsOf: iso(x.quote_asof),
+        markSource: x.mark_source,
         exact: {
           cash: canonical(x.cash),
           positionsValue: canonical(x.positions_value),

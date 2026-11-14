@@ -111,6 +111,11 @@ export const EquitySnapshot = z.strictObject({
   valuedComplete: z.boolean(),
   /** The oldest quote timestamp used; null when no position was valued. */
   quoteAsOf: z.iso.datetime().nullable(),
+  /**
+   * Where the marks came from (M7b, D-83): SIM_CANDLE when every valued position was marked at the simulated candle price
+   * at that session's close; null for stored quotes of that day (M5) or when nothing was valued.
+   */
+  markSource: z.string().min(1).nullable(),
   exact: z.strictObject({ cash: MoneyString, positionsValue: MoneyString, equity: MoneyString }),
 });
 export type EquitySnapshot = z.output<typeof EquitySnapshot>;

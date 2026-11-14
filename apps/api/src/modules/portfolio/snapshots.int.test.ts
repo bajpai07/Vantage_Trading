@@ -210,6 +210,7 @@ describe('6a. timing, idempotency and the stored mark (Tuesday close)', () => {
         equity: '10000.00',
         valuedComplete: true,
         quoteAsOf: null,
+        markSource: null,
         exact: { cash: '10000.00', positionsValue: '0.00', equity: '10000.00' },
       },
       {
@@ -219,6 +220,7 @@ describe('6a. timing, idempotency and the stored mark (Tuesday close)', () => {
         equity: '9699.94',
         valuedComplete: false,
         quoteAsOf: null,
+        markSource: null,
         exact: { cash: '9699.94', positionsValue: '0.00', equity: '9699.94' },
       },
     ]);

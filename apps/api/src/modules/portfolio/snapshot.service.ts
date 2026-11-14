@@ -7,10 +7,16 @@ import type { Config } from '@vantage/config';
 import { summarisePortfolio, valuePosition } from '@vantage/engine';
 import type { PositionValuation } from '@vantage/engine';
 import { exchangeDate, freshness, nextDate, sessionsBetween } from '@vantage/market-model';
-import type { InstrumentStatus, TradingSession } from '@vantage/market-model';
+import type {
+  AssetClassKind,
+  InstrumentStatus,
+  Quote,
+  TradingSession,
+} from '@vantage/market-model';
 import { parse } from '@vantage/money';
 import type { Logger } from '../../log.js';
 import { CLOCK, CONFIG, LOGGER, POOL, QUOTE_STORE } from '../../tokens.js';
+import { CandleService } from '../market-data/candles/candle.service.js';
 import type { Clock } from '../../tokens.js';
 import { CalendarService } from '../market-data/calendar.service.js';
 import type { QuoteStore } from '../market-data/quote.store.js';
@@ -36,8 +42,15 @@ interface AccountRow {
   last_snapshot: string | null;
 }
 
+/** Marks written by the equity-curve catch-up (D-83): the simulated candle price at that session's close. */
+export const MARK_SOURCE_SIM_CANDLE = 'SIM_CANDLE';
+
+const classOf = (assetClass: string): AssetClassKind =>
+  assetClass === 'ETF' ? 'ETF' : assetClass === 'CRYPTO' ? 'CRYPTO' : 'EQUITY';
+
 interface HoldingRow {
   symbol: string;
+  exchange: string;
   status: string;
   asset_class: string;
   qty: string;
@@ -51,6 +64,8 @@ export class SnapshotService {
     @Inject(QUOTE_STORE) private readonly store: QuoteStore,
     @Inject(CalendarService) private readonly calendars: CalendarService,
     @Inject(LOGGER) private readonly logger: Logger,
+    @Inject(CandleService) private readonly candles: CandleService,
+    @Inject(CONFIG) private readonly config: Config,
   ) {}
 
   /**
@@ -121,21 +136,64 @@ export class SnapshotService {
     now: Date,
   ): Promise<{ inserted: boolean; complete: boolean }> {
     const h = await this.pool.query<HoldingRow>(
-      `SELECT i.symbol, i.status::text AS status, i.asset_class::text AS asset_class,
+      `SELECT i.symbol, x.code AS exchange, i.status::text AS status, i.asset_class::text AS asset_class,
               sum(CASE WHEN e.side = 'BUY' THEN e.qty ELSE -e.qty END) AS qty,
               sum(CASE WHEN e.side = 'BUY' THEN -(e.gross_usd + e.fee_usd) ELSE e.gross_usd - e.fee_usd END)
                 AS cash_effect
          FROM executions e
          JOIN instruments i ON i.id = e.instrument_id
+         JOIN exchanges x ON x.id = i.exchange_id
         WHERE e.account_id = $1::uuid AND e.executed_at <= $2::timestamptz
-        GROUP BY i.symbol, i.status, i.asset_class`,
+        GROUP BY i.symbol, x.code, i.status, i.asset_class`,
       [acct.id, session.close],
     );
     let cash = parse(acct.initial_capital);
     const valuations: PositionValuation[] = [];
+    let candleMarks = 0;
     for (const row of h.rows) {
       cash = cash.add(parse(row.cash_effect));
       if (parse(row.qty).sign() <= 0) continue; // closed out by this day
+      // D-83: with the simulated source, the mark of a past day is the candle price at THAT session's close (a pure
+      // function of the seed and the instant: it can never be a later price). Any other source keeps the M5 rule below.
+      const candlePrice =
+        this.config.marketDataSource === 'SIM'
+          ? await this.candles.priceAt(
+              { symbol: row.symbol, exchange: row.exchange, assetClass: row.asset_class },
+              session.close,
+            )
+          : null;
+      if (candlePrice !== null) {
+        const asQuote: Quote = {
+          symbol: row.symbol,
+          bid: candlePrice,
+          ask: candlePrice,
+          last: candlePrice,
+          providerTs: session.close,
+          receivedAt: session.close,
+          source: 'SIM',
+          entitlement: 'REAL_TIME',
+          delaySeconds: 0,
+        };
+        const fc = freshness(
+          asQuote,
+          row.status as InstrumentStatus,
+          { state: 'CLOSED' },
+          session.close,
+          { assetClass: classOf(row.asset_class) },
+        );
+        valuations.push(
+          valuePosition({
+            symbol: row.symbol,
+            qty: row.qty,
+            costBasis: '0',
+            // a candle price is a last/mid price, not a bid: it is marked as LAST
+            quote: { bid: null, last: candlePrice, providerTs: session.close, source: 'SIM' },
+            freshness: fc.state,
+          }),
+        );
+        candleMarks += 1;
+        continue;
+      }
       const stored = (await this.store.get(row.symbol.toUpperCase()))?.lastAccepted ?? null;
       const usable =
         stored !== null &&
@@ -150,7 +208,7 @@ export class SnapshotService {
         { state: 'CLOSED' },
         session.close,
         {
-          assetClass: row.asset_class === 'ETF' ? 'ETF' : 'EQUITY',
+          assetClass: classOf(row.asset_class),
         },
       );
       valuations.push(
@@ -180,8 +238,8 @@ export class SnapshotService {
     });
     const r = await this.pool.query(
       `INSERT INTO equity_snapshots (account_id, snapshot_date, cash, positions_value, equity, valued_complete,
-                                     quote_asof, created_at)
-       VALUES ($1::uuid, $2::date, $3::numeric, $4::numeric, $5::numeric, $6, $7, $8)
+                                     quote_asof, created_at, mark_source)
+       VALUES ($1::uuid, $2::date, $3::numeric, $4::numeric, $5::numeric, $6, $7, $8, $9)
        ON CONFLICT (account_id, snapshot_date) DO NOTHING`,
       [
         acct.id,
@@ -192,6 +250,8 @@ export class SnapshotService {
         !s.incomplete,
         s.oldestQuoteAsOf,
         now,
+        // SIM_CANDLE only when every valued position was marked from a candle; stored quotes (M5) or no marks: null
+        candleMarks > 0 && candleMarks === valuations.length ? MARK_SOURCE_SIM_CANDLE : null,
       ],
     );
     return { inserted: (r.rowCount ?? 0) > 0, complete: !s.incomplete };

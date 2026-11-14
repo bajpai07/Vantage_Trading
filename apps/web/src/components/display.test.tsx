@@ -81,6 +81,7 @@ const snap = (date: string, equity: string, valuedComplete = true): EquitySnapsh
   equity,
   valuedComplete,
   quoteAsOf: null,
+  markSource: null,
   exact: { cash: equity, positionsValue: '0.00', equity },
 });
 
