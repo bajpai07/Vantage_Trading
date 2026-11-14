@@ -63,14 +63,14 @@ pnpm --filter web dev
 
 ## End-to-end tests (Playwright) on Windows
 
-The e2e suite is **not part of `pnpm verify` and not in CI yet**. It drives a real Chromium against the real production build of the web app, the real API (Nest, as `vantage_app`) and a real throwaway Postgres database, with FIXTURE quotes and the API's injected clock (Tuesday 2026-11-10 10:00 New York, market open, so quote times are deterministic). A small test-only control server (`apps/api/src/testing/e2e-server.ts`) lets a test set quotes and the clock; nothing like it exists in the real API.
+The e2e suite is **not part of `pnpm verify` and not in CI yet**. It drives a real Chromium against the real production build of the web app, the real API (Nest, as `vantage_app`) and a real throwaway Postgres database, with the simulated (SIM) feed in demo mode (stocks and crypto) and the API's injected clock (Tuesday 2026-11-10 10:00 New York, market open, so quote times are deterministic). A small test-only control server (`apps/api/src/testing/e2e-server.ts`) lets a test set quotes and the clock; nothing like it exists in the real API.
 
 ```powershell
 pnpm install --frozen-lockfile
 pnpm db:up ; pnpm db:migrate
 pnpm --filter web exec playwright install chromium      # once: downloads the browser (about 120 MB)
 pnpm --filter web build                                  # the e2e server runs the production build
-pnpm --filter web test:e2e                               # 69 tests, about 3 minutes
+pnpm --filter web test:e2e                               # 75 tests, about 3 minutes
 ```
 
 Ports used (so a running dev server is not disturbed): web 3100, API 4100, control 4101. The run creates one `t_*` database and drops it at the end (`pnpm test:cleanup` removes strays after a crash). Failure traces and screenshots go to `apps/web/test-results/` (git-ignored); the screenshots in `docs/phase-reports/m6a/` and `m6b/` are written by the specs. The test API also has two test-only control endpoints, `POST /reconcile` (the API's own zero-tolerance reconciliation) and `POST /counts` (orders and executions of a user), used to prove "exactly one order" and clean books.
@@ -88,7 +88,7 @@ Ports used (so a running dev server is not disturbed): web 3100, API 4100, contr
 3. **Review** opens a modal dialog: side, quantity, estimated price, cost, fee, cash after, the quote's time and source. Confirm reads "Buy 10 AAPL" or "Sell 4 AAPL". The estimate is frozen while you review.
 4. **Confirm** sends `POST /v1/orders`. A fill shows price, quantity, value, fee and cash now (from `/v1/account`) and a link to Orders; the position and recent orders on the page update without a reload. A reject shows the plain sentence for its code and says nothing was changed. `PRICE_MOVED` also shows the current price and offers "Review again": nothing is resubmitted automatically (D-71).
 
-**A disabled button always says why**, in this order: request in flight; instrument status (HALTED blocks both sides, SELL_ONLY blocks buying, DELISTED both); quote UNAVAILABLE, CLOSED or STALE; no bid or ask; a failed price refresh; no quantity; quantity above the maximum; selling with no position; the estimate still calculating or failed; and finally the reject sentence of whatever the preview says would happen (not enough cash, not enough shares, trading paused, and so on).
+**A disabled button always says why**, in this order: request in flight; the instrument cannot be traded yet (crypto before M8: "This instrument is not tradable yet: its prices are shown, but trading it arrives in a later update.", no estimate is requested); instrument status (HALTED blocks both sides, SELL_ONLY blocks buying, DELISTED both); quote UNAVAILABLE, CLOSED or STALE; no bid or ask; a failed price refresh; no quantity; quantity above the maximum; selling with no position; the estimate still calculating or failed; and finally the reject sentence of whatever the preview says would happen (not enough cash, not enough shares, trading paused, and so on).
 
 ### Idempotency key lifecycle (D-72)
 
@@ -113,7 +113,7 @@ Everything works with the keyboard: `/` to search, Enter to review and to confir
 - **Rounded and exact.** The API sends 2 dp amounts and an `exact` companion; the screen shows the 2 dp value and the exact value on hover and in the "Exact amounts" detail.
 - **Every valuation shows its freshness badge** (`REAL-TIME`, `DELAYED`, `STALE`, `CLOSED`, `UNAVAILABLE`: a dot and a word, never colour alone) and the quote time in UTC. A test proves the mapping is exhaustive against the contract.
 - **No usable price is never a number.** An `UNAVAILABLE` position is flagged ("No price: excluded from totals"), its value cells show a dash, the "Incomplete valuation" notice appears, equity says it excludes it, and **total return `null` shows a dash, never 0**.
-- **The FIXTURE banner comes from the API** (`GET /v1/market/feed`), is non-dismissible, and is on every page including login. If the API cannot be asked, the banner says the status is unavailable instead of assuming real data.
+- **The market data banner comes from the API** (`GET /v1/market/feed`), is non-dismissible, and is on every page including login. It is built from the per-class `sources` (M7a, D-75): simulated stocks and crypto say "Simulated market data — not real prices"; a live class (a future adapter) says "live public exchange data — demo" with its source name; a mix says each class's own truth; the simulated 24/7 stock session adds "Simulated 24/7 session"; and demo mode (`DEMO_MODE=true`, D-77) adds "Demo mode — virtual money, no real trading". The footer also says "This is a demo" in demo mode. A feed that should be publishing but is not gets its own notice ("The stock price feed is not publishing right now") in a separate element, so the banner text itself stays about what the data is. If the API cannot be asked, the banner says the status is unavailable instead of assuming real data.
 - **"Virtual money — not real trading"** is in the footer of every page.
 - **P&L is never colour alone:** a sign, a ▲ or ▼ glyph and a screen-reader word ("gain", "loss") accompany the colour.
 - **Responses are validated:** a success body that does not match its `@vantage/contracts` schema becomes a safe error ("We received an unexpected answer from the server, so nothing was shown"), never rendered.

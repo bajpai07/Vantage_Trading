@@ -59,6 +59,58 @@ The source of truth is `exchanges.calendar` (JSONB), validated with Zod when loa
 
 A real provider adapter (US delayed consolidated data under a commercial licence) behind the same `MarketDataProvider` interface, entitlement taken from the vendor contract, nightly master sync, a `provider_feeds` configuration with licence references, health monitoring, and (when needed) a Redis `QuoteStore`. M4 (trading) reads quotes through `QuoteService` and must treat `STALE`, `CLOSED` and `UNAVAILABLE` as not eligible.
 
+## The simulated feed (M7a: SIM, stocks and crypto)
+
+The demo runs on **simulated data for both stocks and crypto** (D-74): no exchange, no vendor, no network. Every simulated quote is labelled `SIM` end to end (quote responses, `/v1/market/feed`, the banner, and `quote_source` on every execution row). Nothing about it is real: it must never be presented as real market data.
+
+### Sources and labels (D-75)
+
+| Source                    | Where                                                      | Mode in `/v1/market/feed` | Entitlement                                                                        |
+| ------------------------- | ---------------------------------------------------------- | ------------------------- | ---------------------------------------------------------------------------------- |
+| `SIM`                     | simulated stocks, ETFs and (with `CRYPTO_FEED=sim`) crypto | `SIMULATED`               | `REAL_TIME` (so the shared freshness function works unchanged), label always `SIM` |
+| `FIXTURE`                 | local development and tests only (D-48)                    | `FIXTURE`                 | `DELAYED`, 900 s                                                                   |
+| a live exchange or vendor | **not built** (see "Future: live crypto feed")             | `LIVE`                    | from the contract                                                                  |
+
+### Configuration and guards (D-76, D-77)
+
+| Variable             | Values                            | Rule                                                                                                                                                                                                                                                                |
+| -------------------- | --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MARKET_DATA_SOURCE` | `FIXTURE`, `SIM`, `PROVIDER`      | stocks and ETFs. `FIXTURE` is refused in staging and production; `PROVIDER` has no adapter yet (M3b)                                                                                                                                                                |
+| `CRYPTO_FEED`        | `off` (default), `sim`            | `sim` needs `MARKET_DATA_SOURCE=SIM` (one provider per process). Off: crypto instruments exist but are `UNAVAILABLE`                                                                                                                                                |
+| `SIM_SESSION`        | `NYSE` (default), `ALWAYS_OPEN`   | `ALWAYS_OPEN` is **only valid with `MARKET_DATA_SOURCE=SIM`**: it makes the simulated stocks' exchanges report `OPEN` at every instant (note "Simulated 24/7 session") and drops the overnight gap. It never applies to fixture or real data. Crypto is always 24/7 |
+| `DEMO_MODE`          | `true`, `false` (default)         | **required `true` in staging and production when the source is `SIM`** (startup refuses otherwise). With it the web banner and footer say it is a demo with virtual money                                                                                           |
+| `SIM_SEED`           | 1 to 64 characters `A-Za-z0-9._-` | the prices are a pure function of this seed and the time                                                                                                                                                                                                            |
+| `SIM_TICK_MS`        | 200 to 60000 (default 1000)       | how often the runner publishes                                                                                                                                                                                                                                      |
+
+How to run each mode:
+
+```powershell
+# local, fixture (the default; slow 30 s refresh)
+MARKET_DATA_SOURCE=FIXTURE
+
+# local, simulated stocks and crypto, around the clock (a demo that works on weekends and at night)
+MARKET_DATA_SOURCE=SIM  CRYPTO_FEED=sim  SIM_SESSION=ALWAYS_OPEN  DEMO_MODE=true
+
+# staging or production demo
+APP_ENV=staging  MARKET_DATA_SOURCE=SIM  CRYPTO_FEED=sim  DEMO_MODE=true  (TRUSTED_PROXY_CIDRS and the other staging settings as usual)
+```
+
+### The price model (D-78)
+
+`packages/market-model/src/sim.ts` is **pure**: the price of a symbol at a given second is a function of `(seed, symbol, time)` only, so a restart, another machine or a test always agrees, without the feed having to run continuously. No clock, no randomness, no IO and no floating point: only integer arithmetic (a 32-bit hash, safe integers, BigInt for the exponential). The lint rules for time-handling pure code enforce that.
+
+- **Path.** The log-price offset is a sum of 23 "value noise" octaves with knots every 1, 2, 4 ... 2^22 seconds (about 48 days); each knot is a hash of (seed, symbol, octave, knot index) and is interpolated linearly. Octave amplitudes grow with the square root of the knot spacing, so the wandering scales like a random walk, but is bounded over weeks. `price = base x exp(offset)`, rounded to the tick.
+- **Volatility** is a per-symbol daily figure in basis points, a **scale parameter** (illustration), not a calibrated market estimate. Observed: about 0.003 to 0.02 percent per second and a few percent per day (see the tests).
+- **Spread** is 1 to 3 ticks: the symbol's usual spread, one tick wider on about one second in four. Bid is below ask, both are tick multiples, `last` is the mid.
+- **Gaps (NYSE session only).** On about one day in three a small overnight jump (at most `gapBps` either way, 30 or 60 bp) happens at 14:30 UTC (the NYSE open in winter; not DST-aware on purpose). No gap in `ALWAYS_OPEN` mode and none for crypto.
+- **Universe** (`sim-universe.ts`, versioned, "as of" 2026-11-14, the base prices are **illustrative round numbers, not market data**): AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, META, SPY, QQQ, VOO, JPM, KO; and BTC-USD, ETH-USD, SOL-USD, XRP-USD, DOGE-USD, BNB-USD (tick 0.01, 0.01, 0.01, 0.0001, 0.00001, 0.01; the usual ticks, illustrative).
+- **Runner.** `SimProvider` (`apps/api/src/modules/market-data/sim/`) is an ordinary `MarketDataProvider`. The existing refresher publishes its snapshot every `SIM_TICK_MS` (not in `APP_ENV=test`, where a test calls `refresh()` with its own clock) through the **existing ingest and validator** (a second validation path is deliberately not built). The clock is injected. Crypto uses the 3-second real-time freshness window, stocks 5 seconds.
+- **Validation.** Over a simulated 24 hours (one quote per second, six symbols, through `validateQuote`) nothing is rejected, warned about or held as an outlier (a unit test; a control proves the validator does reject a crossed quote and a 12 percent jump).
+
+### Crypto is display-only until M8
+
+Migration 0024 adds the exchange `CRYPTO` (always open) and six crypto instruments with an **empty `tradable_in`**, so the trading engine rejects every order on them with `INSTRUMENT_NOT_TRADABLE` (the instrument API reports `tradable: false` and the ticket says "not tradable yet"). `qty_step` and `min_qty` are `0.00000001` (8 decimal places) and `fractional_ok` is true, recorded for M8. Migration 0025 adds a version 1 fee schedule for `CRYPTO` (placeholder values, to be reviewed in M8) because the order path loads the schedule of an instrument's asset class before it decides; without it a crypto order was an internal error instead of the reject.
+
 ## Future: live crypto feed (M7a T1 evidence; NOT built)
 
 **Decision (founder, M7a): the demo uses simulated data for both stocks and crypto (D-74).** No live exchange adapter was built. This section records what was checked so a later phase does not have to start from zero, and what was **not** verified.
