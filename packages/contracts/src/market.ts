@@ -55,6 +55,31 @@ export const QuotesQuery = z.strictObject({
 });
 export type QuotesQuery = z.output<typeof QuotesQuery>;
 
+/**
+ * The day change of a quote (M7b, D-82), computed by the server from exact decimals: the browser does no arithmetic.
+ * PREV_SESSION_CLOSE: the close of the previous regular session (stocks on the real calendar). ROLLING_24H: the price 24
+ * hours ago (crypto, and stocks in the simulated 24/7 session). Every field is null when there is no prior data: a missing
+ * reference is never shown as 0.
+ */
+export const CHANGE_BASES = ['PREV_SESSION_CLOSE', 'ROLLING_24H'] as const;
+export const ChangeBasis = z.enum(CHANGE_BASES);
+export type ChangeBasis = z.output<typeof ChangeBasis>;
+export const changeFields = {
+  /** The reference price: the previous close, or the price 24 hours ago. */
+  prevClose: MoneyString.nullable().optional(),
+  /** last minus prevClose, exact. */
+  change: MoneyString.nullable().optional(),
+  /** change / prevClose x 100, rounded to 2 decimal places (half to even). Always has two decimals. */
+  changePct: z
+    .string()
+    .regex(/^-?\d+\.\d{2}$/, 'must be a decimal with two places')
+    .nullable()
+    .optional(),
+  changeBasis: ChangeBasis.nullable().optional(),
+  /** Which price the change is measured from: the last trade, or (only when there is none) the mid of bid and ask. */
+  changeOf: z.enum(['LAST', 'MID']).nullable().optional(),
+};
+
 export const QuoteItem = z
   .strictObject({
     symbol: z.string(),
@@ -73,6 +98,7 @@ export const QuoteItem = z
     last: MoneyString.optional(),
     /** ask minus bid, computed by the server (the browser does no money arithmetic). Present with bid and ask. */
     spread: MoneyString.optional(),
+    ...changeFields,
     gapConfirmed: z.literal(true).optional(),
   })
   .refine(
@@ -81,7 +107,12 @@ export const QuoteItem = z
       (q.bid === undefined &&
         q.ask === undefined &&
         q.last === undefined &&
-        q.spread === undefined),
+        q.spread === undefined &&
+        q.prevClose === undefined &&
+        q.change === undefined &&
+        q.changePct === undefined &&
+        q.changeBasis === undefined &&
+        q.changeOf === undefined),
     'an UNAVAILABLE quote must carry no price',
   );
 export type QuoteItem = z.output<typeof QuoteItem>;

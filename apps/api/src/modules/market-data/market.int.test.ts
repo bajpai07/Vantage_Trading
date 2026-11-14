@@ -70,6 +70,12 @@ describe('3a. freshness through the API (REAL_TIME is not reachable with the DEL
         bid: '11.11',
         ask: '11.13',
         spread: '0.02', // ask minus bid, computed by the server
+        // the fixture feed has no candle source: the day change is null, never 0 (M7b, D-82)
+        prevClose: null,
+        change: null,
+        changePct: null,
+        changeBasis: null,
+        changeOf: null,
         last: '11.11',
       },
       expect.objectContaining({

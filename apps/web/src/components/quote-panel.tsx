@@ -2,6 +2,8 @@ import type { InstrumentItem, MarketStatusResponse, QuoteItem } from '@vantage/c
 import { formatUtc } from '../lib/format';
 import { ageText, marketLine } from '../lib/market';
 import { DASH, formatPrice } from '../lib/money';
+import { changeView } from '../lib/change';
+import { ChangeCell } from './change-cell';
 import { FreshnessBadge } from './freshness-badge';
 import { Alert } from './ui';
 
@@ -19,6 +21,7 @@ export function QuotePanel(props: {
   const { instrument, quote, market, refreshFailed } = props;
   const line = marketLine(instrument.exchange, market);
   const hasPrice = quote.bid !== undefined && quote.ask !== undefined;
+  const change = changeView(quote);
   return (
     <section
       aria-labelledby="quote-title"
@@ -36,7 +39,7 @@ export function QuotePanel(props: {
           </Alert>
         </div>
       ) : null}
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         {(
           [
             ['Bid', quote.bid, 'quote-bid'],
@@ -59,6 +62,32 @@ export function QuotePanel(props: {
             </div>
           </div>
         ))}
+        <div
+          className="rounded-md border border-line bg-bg-1 px-3 py-2"
+          data-testid="quote-change-card"
+        >
+          <div className="text-[12px] leading-4 text-text-2">Change</div>
+          <div className="num mt-0.5 text-[15px] leading-6 text-text-0">
+            {hasPrice ? (
+              <ChangeCell
+                change={quote.change}
+                changePct={quote.changePct}
+                changeBasis={quote.changeBasis}
+                testId="quote-change"
+              />
+            ) : (
+              <span data-testid="quote-change" data-direction="none">
+                —<span className="sr-only">no price</span>
+              </span>
+            )}
+          </div>
+          <div
+            className="mt-0.5 text-[11px] leading-[14px] text-text-2"
+            data-testid="quote-change-basis"
+          >
+            {change.basisLabel ?? (hasPrice ? 'no prior close yet' : '')}
+          </div>
+        </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-2">
         <FreshnessBadge state={quote.freshness} source={quote.source} asOf={quote.asOf} />

@@ -366,6 +366,18 @@ export class OrdersService {
         asOf: q === null ? null : q.providerTs.toISOString(),
         source: q === null ? null : q.source,
         freshness: snap.freshness,
+        // the same day-change fields as /v1/quotes, from the same function
+        ...(q === null
+          ? {}
+          : await this.quotes.changeFor(
+              {
+                symbol: ctx.instrument.symbol,
+                exchange: ctx.instrument.exchange,
+                assetClass: ctx.instrument.assetClass,
+              },
+              q,
+              now,
+            )),
       },
       disclaimer: ORDER_PREVIEW_DISCLAIMER,
       generatedAt: now.toISOString(),

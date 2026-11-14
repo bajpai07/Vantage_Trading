@@ -2,11 +2,12 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { SearchResponse } from '@vantage/contracts';
-import type { InstrumentItem } from '@vantage/contracts';
+import { QuotesResponse, SearchResponse } from '@vantage/contracts';
+import type { InstrumentItem, QuoteItem } from '@vantage/contracts';
 import { clientGet } from '../lib/client-api';
 import { describeFailure } from '../lib/errors';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
+import { ChangeCell } from './change-cell';
 import { inputClass } from './ui';
 
 const DEBOUNCE_MS = 250;
@@ -32,6 +33,8 @@ export function SearchBox() {
   const [state, setState] = useState<SearchState>({ kind: 'idle' });
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
+  // the day change of the results, from /v1/quotes (one request per search; a failure just leaves it out)
+  const [quotes, setQuotes] = useState<Readonly<Record<string, QuoteItem>>>({});
   const latest = useRef(0); // only the newest request may update the screen
 
   // "/" focuses the search unless the user is already typing somewhere
@@ -65,6 +68,17 @@ export function SearchBox() {
           : { kind: 'results', items: r.data.results },
       );
       setActive(0);
+      setQuotes({});
+      void (async () => {
+        const symbols = r.data.results.map((x) => x.symbol).join(',');
+        if (symbols === '') return;
+        const qr = await clientGet(
+          `/v1/quotes?symbols=${encodeURIComponent(symbols)}`,
+          QuotesResponse,
+        );
+        if (id !== latest.current || !qr.ok) return;
+        setQuotes(Object.fromEntries(qr.data.quotes.map((x) => [x.symbol, x])));
+      })();
     } else {
       setState({ kind: 'error', message: describeFailure(r, 'load').message });
     }
@@ -216,6 +230,17 @@ export function SearchBox() {
                     <span className="shrink-0 text-[11px] text-text-1">
                       {item.exchange} · {ASSET_CLASS_LABELS[item.assetClass]}
                     </span>
+                    {quotes[item.symbol] === undefined ||
+                    quotes[item.symbol]?.freshness === 'UNAVAILABLE' ? null : (
+                      <span className="shrink-0 text-[12px]" data-testid="search-change">
+                        <ChangeCell
+                          compact
+                          change={quotes[item.symbol]?.change}
+                          changePct={quotes[item.symbol]?.changePct}
+                          changeBasis={quotes[item.symbol]?.changeBasis}
+                        />
+                      </span>
+                    )}
                     {sv.tone === 'ok' ? null : (
                       <span
                         data-testid="search-status-badge"

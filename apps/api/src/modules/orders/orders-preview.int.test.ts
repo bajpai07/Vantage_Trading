@@ -81,6 +81,12 @@ describe('3. the preview equals what the real order then produces (the M4a golde
         asOf: '2026-11-10T14:45:00.000Z',
         source: 'FIXTURE',
         freshness: 'DELAYED',
+        // the same day-change fields as a quote; null on the fixture feed (no candle source)
+        prevClose: null,
+        change: null,
+        changePct: null,
+        changeBasis: null,
+        changeOf: null,
       },
       disclaimer: ORDER_PREVIEW_DISCLAIMER,
       generatedAt: OPEN_TIME,

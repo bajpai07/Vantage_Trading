@@ -8,15 +8,33 @@ import type {
   MarketState,
   Quote,
 } from '@vantage/market-model';
+import { dayChange } from '@vantage/market-model';
 import { parse, sub } from '@vantage/money';
 import { CLOCK, QUOTE_STORE } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
 import { FeedInfoService } from '../feed/feed.module.js';
 import { InstrumentsService } from '../instruments/instruments.module.js';
+import { CandleService } from './candles/candle.service.js';
 import { CalendarService } from './calendar.service.js';
 import type { QuoteStore } from './quote.store.js';
 
 const price = (p: string): string => parse(p).toCanonicalString();
+
+/** The day-change fields of a quote (all null when there is no reference). */
+export interface ChangeFields {
+  readonly prevClose: string | null;
+  readonly change: string | null;
+  readonly changePct: string | null;
+  readonly changeBasis: 'PREV_SESSION_CLOSE' | 'ROLLING_24H' | null;
+  readonly changeOf: 'LAST' | 'MID' | null;
+}
+export const NO_CHANGE: ChangeFields = {
+  prevClose: null,
+  change: null,
+  changePct: null,
+  changeBasis: null,
+  changeOf: null,
+};
 
 /** The class the shared freshness function limits quote age by: crypto has the tighter real-time window. */
 const freshnessClass = (assetClass: string): AssetClassKind =>
@@ -40,7 +58,36 @@ export class QuoteService {
     @Inject(InstrumentsService) private readonly instruments: InstrumentsService,
     @Inject(CalendarService) private readonly calendars: CalendarService,
     @Inject(FeedInfoService) private readonly feed: FeedInfoService,
+    @Inject(CandleService) private readonly candles: CandleService,
   ) {}
+
+  /**
+   * The day change of a quote (M7b, D-82), the ONE function every quote answer uses (/v1/quotes and the order preview).
+   * The reference price comes from the candle provider (the previous session close, or the price 24 hours ago); the
+   * change and the percentage are exact decimal strings computed with @vantage/money. Everything is null when there is
+   * no reference (no candle source, or no history that far back): a missing reference is never 0.
+   */
+  async changeFor(
+    ref: { symbol: string; exchange: string; assetClass: string },
+    quote: Quote,
+    now: Date,
+  ): Promise<ChangeFields> {
+    const reference = await this.candles.referencePrice(ref, now);
+    if (reference === null) return NO_CHANGE;
+    const hasLast = quote.last !== undefined;
+    const from = hasLast
+      ? price(quote.last as string)
+      : parse(quote.bid).add(parse(quote.ask)).div(parse('2'), 8, 'HALF_EVEN').toCanonicalString();
+    const d = dayChange(from, reference.prevClose);
+    if (d === null) return NO_CHANGE;
+    return {
+      prevClose: price(reference.prevClose),
+      change: d.change,
+      changePct: d.changePct,
+      changeBasis: reference.basis,
+      changeOf: hasLast ? 'LAST' : 'MID',
+    };
+  }
 
   /**
    * The freshness verdict (from the shared freshness() function only) and the last accepted quote for one
@@ -116,6 +163,11 @@ export class QuoteService {
         bid: price(quote.bid),
         ask: price(quote.ask),
         spread: sub(parse(quote.ask), parse(quote.bid)).toCanonicalString(),
+        ...(await this.changeFor(
+          { symbol, exchange: row.exchange, assetClass: row.assetClass },
+          quote,
+          now,
+        )),
         ...(quote.last === undefined ? {} : { last: price(quote.last) }),
         ...(quote.gapConfirmed === true ? { gapConfirmed: true as const } : {}),
       });

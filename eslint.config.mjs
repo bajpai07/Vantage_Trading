@@ -178,6 +178,8 @@ export default tseslint.config(
       'apps/web/src/lib/money.ts',
       'apps/web/src/lib/format.ts',
       'apps/web/src/lib/ticket.ts',
+      'apps/web/src/lib/change.ts',
+      'apps/web/src/components/change-cell.tsx',
       'apps/web/src/components/order-ticket.tsx',
     ],
     ignores: ['**/*.test.ts'],

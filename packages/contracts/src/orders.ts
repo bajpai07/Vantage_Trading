@@ -3,7 +3,7 @@
 // decides the account, the quote, the fee schedule, the trading switch and the time.
 import { z } from 'zod';
 import { MoneyString } from './money-string.js';
-import { FreshnessState, SymbolSchema } from './market.js';
+import { FreshnessState, SymbolSchema, changeFields } from './market.js';
 
 /** Largest quantity accepted for one order (shares). Larger values are a validation error, not a reject. */
 export const MAX_ORDER_QTY = 1_000_000;
@@ -169,6 +169,8 @@ export const OrderPreviewQuote = z.strictObject({
   source: z.string().nullable(),
   /** From the shared freshness function. UNAVAILABLE (no quote) has null prices. */
   freshness: FreshnessState,
+  // the same day-change fields as a quote (M7b, D-82), from the same server function
+  ...changeFields,
 });
 export type OrderPreviewQuote = z.output<typeof OrderPreviewQuote>;
 

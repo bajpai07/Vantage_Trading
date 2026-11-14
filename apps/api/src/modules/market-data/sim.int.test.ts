@@ -509,3 +509,142 @@ describe('the runner (D-78): the simulated feed publishes by itself outside test
     }
   });
 });
+
+describe('prior close and day change on quotes (M7b, D-82)', () => {
+  it('stocks on the NYSE session: previous session close, exact strings (Tuesday 15:00Z: Monday closed at 190.66, the price now is 187.05)', async () => {
+    const h = await boot(SIM_ENV, TUESDAY);
+    try {
+      const u = await newUser(h, db);
+      const [q] = await quotes(h, u.token, 'AAPL');
+      expect(q).toMatchObject({
+        last: '187.05',
+        prevClose: '190.66',
+        change: '-3.61',
+        changePct: '-1.89', // -3.61 / 190.66 = -1.8935 percent, 2 dp half-even
+        changeBasis: 'PREV_SESSION_CLOSE',
+        changeOf: 'LAST',
+      });
+      // every day-change field is a string, never a number
+      for (const k of ['prevClose', 'change', 'changePct']) expect(typeof q?.[k], k).toBe('string');
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('crypto: the price 24 hours ago, basis ROLLING_24H (BTC-USD: 72095.74 a day ago, 75459.99 now)', async () => {
+    const h = await boot(SIM_ENV, TUESDAY);
+    try {
+      const u = await newUser(h, db);
+      const [q] = await quotes(h, u.token, 'BTC-USD');
+      expect(q).toMatchObject({
+        last: '75459.99',
+        prevClose: '72095.74',
+        change: '3364.25',
+        changePct: '4.67',
+        changeBasis: 'ROLLING_24H',
+        changeOf: 'LAST',
+      });
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('the bases differ for the same stock in the two session modes: ALWAYS_OPEN uses ROLLING_24H (control: NYSE uses the session close)', async () => {
+    const nyse = await boot(SIM_ENV, SUNDAY);
+    const always = await boot({ ...SIM_ENV, SIM_SESSION: 'ALWAYS_OPEN' }, SUNDAY);
+    try {
+      const a = await newUser(nyse, db);
+      const b = await newUser(always, db);
+      const [qn] = await quotes(nyse, a.token, 'AAPL');
+      const [qa] = await quotes(always, b.token, 'AAPL');
+      expect(qn?.changeBasis).toBe('PREV_SESSION_CLOSE'); // Sunday: the last session is Friday's, the reference is Thursday's close
+      expect(qa?.changeBasis).toBe('ROLLING_24H');
+      const cfg = SIM_STOCKS.find((c) => c.symbol === 'AAPL');
+      if (cfg === undefined) throw new Error('config');
+      const dayAgo = Math.floor((secOf(SUNDAY) - 86400) / 60) * 60;
+      expect(qa?.prevClose).toBe(
+        parse(simQuoteAt(SEED, cfg, dayAgo, { gaps: false }).last).toCanonicalString(),
+      );
+      expect(qn?.prevClose).not.toBe(qa?.prevClose);
+    } finally {
+      await nyse.close();
+      await always.close();
+    }
+  });
+
+  it('no prior data is null, never 0: crypto within a day of the start of history, and the first NYSE session of 2026', async () => {
+    const early = await boot(SIM_ENV, '2026-01-01T12:00:00.000Z'); // 24 h earlier is before the history starts
+    try {
+      const u = await newUser(early, db);
+      const [btc] = await quotes(early, u.token, 'BTC-USD');
+      expect(btc).toMatchObject({
+        freshness: 'REAL_TIME',
+        prevClose: null,
+        change: null,
+        changePct: null,
+        changeBasis: null,
+        changeOf: null,
+      });
+    } finally {
+      await early.close();
+    }
+    const first = await boot(SIM_ENV, '2026-01-02T15:00:00.000Z'); // the first session of the year: no session before it
+    try {
+      const u = await newUser(first, db);
+      const [aapl] = await quotes(first, u.token, 'AAPL');
+      expect(aapl).toMatchObject({
+        freshness: 'REAL_TIME',
+        prevClose: null,
+        change: null,
+        changePct: null,
+        changeBasis: null,
+      });
+      expect(aapl?.changePct).not.toBe('0.00');
+    } finally {
+      await first.close();
+    }
+  });
+
+  it('an UNAVAILABLE quote carries no change fields at all (kill switch), like it carries no price', async () => {
+    const h = await boot(SIM_ENV, TUESDAY);
+    try {
+      const u = await newUser(h, db);
+      h.app.get(FeedInfoService).setEnabled(false);
+      const [q] = await quotes(h, u.token, 'AAPL');
+      expect(q).toMatchObject({ freshness: 'UNAVAILABLE' });
+      for (const k of [
+        'prevClose',
+        'change',
+        'changePct',
+        'changeBasis',
+        'changeOf',
+        'bid',
+        'last',
+      ]) {
+        expect(q, k).not.toHaveProperty(k);
+      }
+    } finally {
+      await h.close();
+    }
+  });
+
+  it('the order preview embeds the SAME day-change fields as /v1/quotes (one function)', async () => {
+    const h = await boot(SIM_ENV, TUESDAY);
+    try {
+      const u = await newUser(h, db);
+      const [q] = await quotes(h, u.token, 'AAPL');
+      const preview = await h.http
+        .post('/v1/orders/preview')
+        .set('Cookie', cookie(u.token))
+        .set('Origin', 'http://localhost:3000')
+        .send({ symbol: 'AAPL', side: 'BUY', type: 'MARKET', qty: '1', referencePrice: q?.ask });
+      expect(preview.status).toBe(200);
+      for (const k of ['prevClose', 'change', 'changePct', 'changeBasis', 'changeOf']) {
+        expect(preview.body.quote[k], k).toBe(q?.[k]);
+      }
+      expect(preview.body.quote.changePct).toBe('-1.89');
+    } finally {
+      await h.close();
+    }
+  });
+});
