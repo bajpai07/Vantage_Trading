@@ -77,8 +77,7 @@ export interface CandleInstrument extends SimSymbolConfig {
 }
 
 export type CandleSessions =
-  | { readonly kind: 'CONTINUOUS' }
-  | { readonly kind: 'CALENDAR'; readonly calendar: Calendar };
+  { readonly kind: 'CONTINUOUS' } | { readonly kind: 'CALENDAR'; readonly calendar: Calendar };
 
 export interface Candle {
   /** Open time, epoch seconds (UTC). */
@@ -238,18 +237,21 @@ class VolumeModel {
     return v;
   }
 
-  /** Sum of the ripple over the minutes before minute index `m` (m >= 0). */
-  #rippleBefore(m: number): number {
+  /** Sum of the ripple over the minute indexes [a, b) (0 <= a <= b), without any large intermediate sum. */
+  #rippleBetween(a: number, b: number): number {
+    const qa = Math.floor(a / RIPPLE_PERIOD);
+    const qb = Math.floor(b / RIPPLE_PERIOD);
     return (
-      Math.floor(m / RIPPLE_PERIOD) * this.#rippleTotal +
-      (this.#ripplePrefix[m % RIPPLE_PERIOD] as number)
+      (qb - qa) * this.#rippleTotal +
+      (this.#ripplePrefix[b % RIPPLE_PERIOD] as number) -
+      (this.#ripplePrefix[a % RIPPLE_PERIOD] as number)
     );
   }
 
   /** Exact volume in smallest units over the whole minutes [fromSec, toSec) (both multiples of 60). */
   between(fromSec: number, toSec: number): number {
     if (toSec <= fromSec) return 0;
-    let total = this.#rippleBefore(toSec / 60) - this.#rippleBefore(fromSec / 60);
+    let total = this.#rippleBetween(fromSec / 60, toSec / 60);
     for (let h = Math.floor(fromSec / 3600); h * 3600 < toSec; h += 1) {
       const a = Math.max(fromSec, h * 3600);
       const b = Math.min(toSec, (h + 1) * 3600);
@@ -355,7 +357,8 @@ function sessionsBackFrom(calendar: Calendar, date: string, count: number): Trad
     const floor = calendar.coverage.from;
     if (end < floor) break;
     const s = sessionsBetween(calendar, start > floor ? start : floor, end);
-    for (let i = s.length - 1; i >= 0 && out.length < count; i -= 1) out.push(s[i] as TradingSession);
+    for (let i = s.length - 1; i >= 0 && out.length < count; i -= 1)
+      out.push(s[i] as TradingSession);
     end = previousDate(start);
   }
   return out;
@@ -411,4 +414,3 @@ export function sessionClosePrice(
 ): string {
   return unitsToString(simMidUnits(seed, instrument, closeInstant, { gaps }), instrument.tickDp);
 }
-
