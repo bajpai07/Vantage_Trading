@@ -1,11 +1,13 @@
 // Test-only launcher for the web app's end-to-end tests (apps/web/e2e). NOT part of the build and never run in
 // production: it starts the real Nest API on a throwaway real Postgres database as `vantage_app`, with an injected
-// clock (a fixed Tuesday 10:00 New York, market open) and FIXTURE data, and a tiny control server on a second port
+// clock (a fixed Tuesday 10:00 New York, market open) and the SIM feed in demo mode (stocks and crypto, M7a), and a
+// tiny control server on a second port
 // so a test can set quotes and the clock. "Test mode as the API allows": this is the same harness the integration
 // tests use, listening on a port.
 //
 //   E2E_API_PORT (default 4100)  the API
 //   E2E_CONTROL_PORT (default 4101)  POST /quote {symbol,bid,ask,ageSeconds?,last?} | {symbol,clear:true}
+//                                    POST /sim-refresh {} (re-publish the simulated feed)
 //                                    POST /instrument {symbol,status?,tradableIn?}   POST /reconcile {email?}   POST /counts {email}   POST /clock {iso}   POST /shutdown   GET /health
 //   E2E_WEB_ORIGIN (default http://localhost:3100)  the one origin the API accepts (CSRF and CORS)
 import 'reflect-metadata';
@@ -15,6 +17,8 @@ import { createTestDatabase } from '@vantage/test-utils';
 import { QUOTE_STORE } from '../tokens.js';
 import type { InMemoryQuoteStore } from '../modules/market-data/quote.store.js';
 import { reconcileAccount } from '../modules/ledger/index.js';
+import { MarketRefresher } from '../modules/market-data/market.startup.js';
+import { SIM_UNIVERSE } from '@vantage/market-model';
 import { createOrdersHarness, setQuote } from './orders-kit.js';
 
 const apiPort = Number(process.env.E2E_API_PORT ?? 4100);
@@ -24,7 +28,14 @@ const webOrigin = process.env.E2E_WEB_ORIGIN ?? 'http://localhost:3100';
 const db = await createTestDatabase();
 // the web server (this machine, loopback) is the one trusted proxy: tests can then send X-Forwarded-For through it (D-69)
 const h = await createOrdersHarness(db, {
-  env: { WEB_ORIGIN: webOrigin, TRUSTED_PROXY_CIDRS: '127.0.0.1/32,::1/128' },
+  env: {
+    WEB_ORIGIN: webOrigin,
+    TRUSTED_PROXY_CIDRS: '127.0.0.1/32,::1/128',
+    // M7a: the demo configuration: simulated stocks and crypto, labelled SIM, in demo mode (D-74 to D-77)
+    MARKET_DATA_SOURCE: 'SIM',
+    CRYPTO_FEED: 'sim',
+    DEMO_MODE: 'true',
+  },
 });
 await h.app.listen(apiPort, '127.0.0.1');
 
@@ -86,6 +97,15 @@ const control = createServer((req, res) => {
           );
         }
         return send(res, 200, { ok: true });
+      }
+      if (req.url === '/sim-refresh') {
+        // test-only: forget every quote of the simulated universe and publish the simulated feed again at the current
+        // (injected) clock. Tests that script quotes with /quote use this to get the real SIM quotes back.
+        const store = h.app.get<InMemoryQuoteStore>(QUOTE_STORE);
+        for (const i of SIM_UNIVERSE)
+          await store.set(i.symbol, { lastAccepted: null, pending: null });
+        const r = await h.app.get(MarketRefresher).refresh();
+        return send(res, 200, r);
       }
       if (req.url === '/reconcile') {
         // test-only: the full reconciliation (ledger + trading, zero tolerance) of every account, or of one user's

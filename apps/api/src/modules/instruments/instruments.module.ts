@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import type pg from 'pg';
 import { InstrumentItem, SearchQuery, SearchResponse, SymbolSchema } from '@vantage/contracts';
+import { MVP_TRADABLE_GATE } from '@vantage/engine';
 import { parse } from '@vantage/money';
 import { AppError } from '../../common/errors.js';
 import { ZodValidationPipe } from '../../common/zod.pipe.js';
@@ -34,9 +35,16 @@ export class InstrumentsService {
   /** Symbols mapped to a provider, with the provider's own symbol and the tick size (for the refresher). */
   async listForProvider(
     providerId: string,
-  ): Promise<Array<{ symbol: string; providerSymbol: string; tickSize: string }>> {
-    const r = await this.pool.query<{ symbol: string; provider_symbol: string; tick_size: string }>(
-      `SELECT i.symbol, m.provider_symbol, i.tick_size
+  ): Promise<
+    Array<{ symbol: string; providerSymbol: string; tickSize: string; assetClass: string }>
+  > {
+    const r = await this.pool.query<{
+      symbol: string;
+      provider_symbol: string;
+      tick_size: string;
+      asset_class: string;
+    }>(
+      `SELECT i.symbol, m.provider_symbol, i.tick_size, i.asset_class::text AS asset_class
          FROM instruments i JOIN instrument_provider_map m ON m.instrument_id = i.id AND m.provider = $1
         WHERE i.status <> 'DELISTED' ORDER BY i.symbol`,
       [providerId],
@@ -45,6 +53,7 @@ export class InstrumentsService {
       symbol: x.symbol,
       providerSymbol: x.provider_symbol,
       tickSize: x.tick_size,
+      assetClass: x.asset_class,
     }));
   }
 
@@ -95,6 +104,7 @@ export class InstrumentsController {
       entitlement: feed.entitlement,
       delaySeconds: feed.delaySeconds,
       source: r.attrsSource ?? feed.source,
+      tradable: r.tradableIn.includes(MVP_TRADABLE_GATE),
     };
   }
 }

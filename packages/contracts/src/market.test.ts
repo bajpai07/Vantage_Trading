@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   AddWatchlistItemRequest,
   CreateWatchlistRequest,
+  FeedInfoResponse,
   InstrumentItem,
   MarketStatusResponse,
   QuoteItem,
@@ -97,6 +98,7 @@ describe('queries and requests', () => {
         entitlement: 'DELAYED',
         delaySeconds: 900,
         source: 'FIXTURE',
+        tradable: true,
       }).success,
     ).toBe(true);
     expect(
@@ -117,5 +119,56 @@ describe('queries and requests', () => {
         ],
       }).success,
     ).toBe(true);
+  });
+});
+
+describe('FeedInfoResponse (M7a: per-source labelling, D-75)', () => {
+  const source = {
+    assetClass: 'CRYPTO',
+    source: 'SIM',
+    label: 'Simulated market data',
+    mode: 'SIMULATED',
+    session: '24_7',
+    status: 'CONNECTED',
+    lastMessageAt: '2026-11-10T15:00:00.000Z',
+  };
+  const feed = {
+    source: 'SIM',
+    entitlement: 'REAL_TIME',
+    delaySeconds: 0,
+    enabled: true,
+    demoMode: true,
+    sources: [source],
+  };
+
+  it('accepts one entry per class with its own mode, session and status', () => {
+    expect(FeedInfoResponse.safeParse(feed).success).toBe(true);
+    expect(
+      FeedInfoResponse.safeParse({
+        ...feed,
+        sources: [{ ...source, lastMessageAt: null, status: 'OFF' }],
+      }).success,
+    ).toBe(true);
+  });
+
+  it.each([
+    ['an unknown mode', { ...source, mode: 'REAL' }],
+    ['an unknown status', { ...source, status: 'UP' }],
+    ['an unknown session', { ...source, session: 'ALWAYS' }],
+    ['a blank label', { ...source, label: '' }],
+    ['a blank source', { ...source, source: '' }],
+    ['a bad timestamp', { ...source, lastMessageAt: 'yesterday' }],
+    ['an extra field', { ...source, secret: 1 }],
+  ])('refuses %s', (_n, bad) => {
+    expect(FeedInfoResponse.safeParse({ ...feed, sources: [bad] }).success).toBe(false);
+  });
+
+  it('keeps the old fields and requires the new ones (the web app validates every answer)', () => {
+    const noDemo: Record<string, unknown> = { ...feed };
+    delete noDemo.demoMode;
+    expect(FeedInfoResponse.safeParse(noDemo).success).toBe(false);
+    const noSources: Record<string, unknown> = { ...feed };
+    delete noSources.sources;
+    expect(FeedInfoResponse.safeParse(noSources).success).toBe(false);
   });
 });

@@ -16,6 +16,8 @@ export interface InstrumentRow {
   readonly tickSize: string;
   /** attrs.source of the instrument master row, e.g. FIXTURE (null when absent). */
   readonly attrsSource: string | null;
+  /** Feature gates (`tradable_in`); the MVP gate means orders are accepted for this instrument. */
+  readonly tradableIn: readonly string[];
 }
 
 interface RawRow {
@@ -28,6 +30,7 @@ interface RawRow {
   status: string;
   tick_size: string;
   attrs_source: string | null;
+  tradable_in: string[];
 }
 
 const toRow = (r: RawRow): InstrumentRow => ({
@@ -40,10 +43,12 @@ const toRow = (r: RawRow): InstrumentRow => ({
   status: r.status,
   tickSize: r.tick_size,
   attrsSource: r.attrs_source,
+  tradableIn: r.tradable_in,
 });
 
 export const COLUMNS = `i.id, i.symbol, i.name, i.asset_class::text AS asset_class, e.code AS exchange,
-  i.quote_currency AS currency, i.status::text AS status, i.tick_size, i.attrs->>'source' AS attrs_source`;
+  i.quote_currency AS currency, i.status::text AS status, i.tick_size, i.attrs->>'source' AS attrs_source,
+  i.tradable_in::text[] AS tradable_in`;
 
 /** Escapes the LIKE metacharacters so user text is matched literally (ESCAPE '\\' is used in the SQL). */
 export function escapeLike(input: string): string {

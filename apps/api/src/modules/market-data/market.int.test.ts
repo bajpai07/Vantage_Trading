@@ -87,7 +87,9 @@ describe('3a. freshness through the API (REAL_TIME is not reachable with the DEL
 
   it('every one of the 32 fixture symbols is DELAYED and none is REAL_TIME', async () => {
     const all = (
-      await db.migrator.query<{ symbol: string }>(`SELECT symbol FROM instruments ORDER BY symbol`)
+      await db.migrator.query<{ symbol: string }>(
+        `SELECT symbol FROM instruments WHERE asset_class <> 'CRYPTO' ORDER BY symbol`, // crypto is simulated (M7a), not fixture
+      )
     ).rows.map((r) => r.symbol);
     const res = await quotes(all.join(','));
     expect(res.status).toBe(200);
@@ -287,8 +289,16 @@ describe('5. market status API (hand-checked instants, verified 2026-2027 calend
     return res.body.exchanges as Array<Record<string, unknown>>;
   };
   const all = (xs: Array<Record<string, unknown>>, expected: Record<string, unknown>) => {
-    expect(xs.map((x) => x.exchange)).toEqual(['ARCX', 'XNAS', 'XNYS']);
-    for (const x of xs) expect(x).toMatchObject(expected);
+    // M7a: the simulated crypto market is listed too, and never closes (D-74); the US exchanges follow the calendar
+    expect(xs.map((x) => x.exchange)).toEqual(['ARCX', 'CRYPTO', 'XNAS', 'XNYS']);
+    expect(xs.find((x) => x.exchange === 'CRYPTO')).toMatchObject({
+      state: 'OPEN',
+      session: 'REGULAR',
+      note: 'Open 24/7',
+      nextOpen: null,
+      nextClose: null,
+    });
+    for (const x of xs.filter((e) => e.exchange !== 'CRYPTO')) expect(x).toMatchObject(expected);
   };
 
   it('a normal open day: OPEN, REGULAR, closes 21:00Z, next open tomorrow 14:30Z', async () => {

@@ -34,6 +34,11 @@ export const CalendarSchema = z
     }),
     holidays: z.array(z.strictObject({ date: isoDate, name: z.string().min(1) })),
     earlyCloses: z.array(z.strictObject({ date: isoDate, close: HHMM, name: z.string().min(1) })),
+    /**
+     * M7a: a market that never closes (crypto). The market is OPEN at every instant (the session fields are
+     * ignored and coverage is not checked). Absent or false: the regular schedule applies.
+     */
+    alwaysOpen: z.boolean().optional(),
     /** The dates this data is complete for. Outside it the market state is unknown, never guessed. */
     coverage: z.strictObject({ from: isoDate, to: isoDate }),
   })
@@ -242,6 +247,17 @@ export function marketState(calendar: Calendar, instant: Date): MarketState {
   const tz = calendar.timezone;
   const ms = instant.getTime();
   const localDate = localDateOf(tz, ms);
+  if (calendar.alwaysOpen === true) {
+    return {
+      localDate,
+      state: 'OPEN',
+      session: 'REGULAR',
+      reason: null,
+      note: 'Open 24/7',
+      nextOpen: null,
+      nextClose: null,
+    };
+  }
   const plan = planFor(calendar, localDate);
   const base = { localDate };
 

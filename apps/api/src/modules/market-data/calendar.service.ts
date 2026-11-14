@@ -2,7 +2,11 @@ import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import { marketState, parseCalendar } from '@vantage/market-model';
 import type { Calendar, MarketState } from '@vantage/market-model';
-import { POOL } from '../../tokens.js';
+import type { Config } from '@vantage/config';
+import { CONFIG, POOL } from '../../tokens.js';
+
+/** Shown wherever the market state is shown while the simulated stocks run around the clock. */
+export const SIM_24_7_NOTE = 'Simulated 24/7 session';
 
 export interface ExchangeStatus extends MarketState {
   readonly exchange: string;
@@ -17,7 +21,24 @@ export interface ExchangeStatus extends MarketState {
 export class CalendarService {
   #calendars: Map<string, { name: string; calendar: Calendar }> | undefined;
 
-  constructor(@Inject(POOL) private readonly pool: pg.Pool) {}
+  /**
+   * D-76: with SIM_SESSION=ALWAYS_OPEN the simulated stocks' exchanges report OPEN at every instant. The config
+   * guard only allows that with the SIM source, so it can never apply to fixture or real data.
+   */
+  readonly #simAlwaysOpen: boolean;
+
+  constructor(
+    @Inject(POOL) private readonly pool: pg.Pool,
+    @Inject(CONFIG) config: Config,
+  ) {
+    this.#simAlwaysOpen = config.marketDataSource === 'SIM' && config.simSession === 'ALWAYS_OPEN';
+  }
+
+  /** The state of one calendar, with the simulated 24/7 override applied (and said so in `note`). */
+  #stateOf(calendar: Calendar, now: Date): MarketState {
+    if (!this.#simAlwaysOpen || calendar.alwaysOpen === true) return marketState(calendar, now);
+    return { ...marketState({ ...calendar, alwaysOpen: true }, now), note: SIM_24_7_NOTE };
+  }
 
   /** Loads and validates every exchange calendar. Throws CalendarError naming the exchange. */
   async load(): Promise<void> {
@@ -46,7 +67,7 @@ export class CalendarService {
   /** State of one exchange at an instant; undefined for an unknown exchange code. */
   async stateFor(mic: string, now: Date): Promise<MarketState | undefined> {
     const entry = (await this.#loaded()).get(mic);
-    return entry === undefined ? undefined : marketState(entry.calendar, now);
+    return entry === undefined ? undefined : this.#stateOf(entry.calendar, now);
   }
 
   /** The validated calendar of one exchange (loaded on first use); undefined for an unknown exchange code. */
@@ -58,7 +79,7 @@ export class CalendarService {
     return [...(await this.#loaded()).entries()].map(([code, e]) => ({
       exchange: code,
       name: e.name,
-      ...marketState(e.calendar, now),
+      ...this.#stateOf(e.calendar, now),
     }));
   }
 }

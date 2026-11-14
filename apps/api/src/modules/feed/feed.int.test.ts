@@ -22,11 +22,12 @@ describe('GET /v1/market/feed', () => {
   it('needs no session and reports the FIXTURE source, the delayed entitlement and the delay', async () => {
     const res = await h.http.get('/v1/market/feed');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({
+    expect(res.body).toMatchObject({
       source: 'FIXTURE',
       entitlement: 'DELAYED',
       delaySeconds: 900,
       enabled: true,
+      demoMode: false,
     });
     expect(res.headers['set-cookie']).toBeUndefined();
     expect(res.headers['cache-control']).toBe('no-store');

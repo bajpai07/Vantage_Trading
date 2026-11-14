@@ -222,3 +222,102 @@ describe('M4b trading settings', () => {
     expect(e.message).not.toContain(value === '0' || value === '1' ? 'zzz' : value);
   });
 });
+
+describe('simulated feed settings (M7a: D-74, D-76, D-77)', () => {
+  const prod = (over: Record<string, string | undefined>) =>
+    buildTestEnv({
+      APP_ENV: 'production',
+      COOKIE_SECURE: 'true',
+      TRADING_ENABLED: 'true',
+      ...over,
+    });
+
+  it('defaults are safe: no crypto feed, NYSE session, no demo mode, seed and tick set', () => {
+    const c = loadConfig(buildTestEnv());
+    expect(c).toMatchObject({
+      cryptoFeed: 'off',
+      simSession: 'NYSE',
+      demoMode: false,
+      simSeed: 'vantage-demo-1',
+      simTickMs: 1000,
+    });
+  });
+
+  it('SIM with crypto and the 24/7 session is accepted in test (control for the refusals below)', () => {
+    const c = loadConfig(
+      buildTestEnv({ MARKET_DATA_SOURCE: 'SIM', CRYPTO_FEED: 'sim', SIM_SESSION: 'ALWAYS_OPEN' }),
+    );
+    expect(c).toMatchObject({
+      marketDataSource: 'SIM',
+      cryptoFeed: 'sim',
+      simSession: 'ALWAYS_OPEN',
+    });
+  });
+
+  it('ALWAYS_OPEN is refused unless the stock source is SIM (it never applies to FIXTURE or a real provider)', () => {
+    for (const source of ['FIXTURE', 'PROVIDER']) {
+      const e = fail(buildTestEnv({ MARKET_DATA_SOURCE: source, SIM_SESSION: 'ALWAYS_OPEN' }));
+      expect(e.issues.map((i) => i.name)).toContain('SIM_SESSION');
+    }
+  });
+
+  it('crypto simulation needs the SIM provider', () => {
+    const e = fail(buildTestEnv({ MARKET_DATA_SOURCE: 'FIXTURE', CRYPTO_FEED: 'sim' }));
+    expect(e.issues.map((i) => i.name)).toContain('CRYPTO_FEED');
+  });
+
+  it('staging and production refuse a simulated source without DEMO_MODE=true, and accept it with it', () => {
+    for (const appEnv of ['staging', 'production']) {
+      const without = fail(
+        buildTestEnv({
+          APP_ENV: appEnv,
+          COOKIE_SECURE: 'true',
+          TRADING_ENABLED: 'true',
+          MARKET_DATA_SOURCE: 'SIM',
+        }),
+      );
+      expect(without.issues.map((i) => i.name)).toContain('DEMO_MODE');
+      const explicitlyFalse = fail(
+        buildTestEnv({
+          APP_ENV: appEnv,
+          COOKIE_SECURE: 'true',
+          TRADING_ENABLED: 'true',
+          MARKET_DATA_SOURCE: 'SIM',
+          DEMO_MODE: 'false',
+        }),
+      );
+      expect(explicitlyFalse.issues.map((i) => i.name)).toContain('DEMO_MODE');
+      const ok = loadConfig(
+        buildTestEnv({
+          APP_ENV: appEnv,
+          COOKIE_SECURE: 'true',
+          TRADING_ENABLED: 'true',
+          MARKET_DATA_SOURCE: 'SIM',
+          DEMO_MODE: 'true',
+          CRYPTO_FEED: 'sim',
+          SIM_SESSION: 'ALWAYS_OPEN',
+        }),
+      );
+      expect(ok.demoMode).toBe(true);
+    }
+  });
+
+  it('FIXTURE stays refused in production even with DEMO_MODE (D-48 is stricter than D-77)', () => {
+    const e = fail(prod({ MARKET_DATA_SOURCE: 'FIXTURE', DEMO_MODE: 'true' }));
+    expect(e.issues.map((i) => i.name)).toContain('MARKET_DATA_SOURCE');
+  });
+
+  it.each([
+    ['CRYPTO_FEED', 'live'],
+    ['SIM_SESSION', 'zzz-bad-value'],
+    ['DEMO_MODE', 'yes'],
+    ['SIM_SEED', 'has space'],
+    ['SIM_SEED', ''],
+    ['SIM_TICK_MS', '100'],
+    ['SIM_TICK_MS', 'fast'],
+  ])('%s=%j is refused by name, without echoing the value', (name, value) => {
+    const e = fail(buildTestEnv({ MARKET_DATA_SOURCE: 'SIM', [name]: value }));
+    expect(e.issues.map((i) => i.name)).toContain(name);
+    if (value.length > 3) expect(e.message).not.toContain(value);
+  });
+});

@@ -13,7 +13,9 @@ export interface ProviderCapabilities {
 export interface InstrumentMasterEntry {
   readonly symbol: string;
   readonly name: string;
-  readonly assetClass: 'EQUITY' | 'ETF';
+  readonly assetClass: 'EQUITY' | 'ETF' | 'CRYPTO';
+  /** Crypto only: the base asset, for example BTC. */
+  readonly baseAsset?: string;
   /** Market identifier code, e.g. XNAS. */
   readonly exchange: string;
   readonly quoteCurrency: string;

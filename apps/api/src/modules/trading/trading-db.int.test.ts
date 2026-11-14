@@ -81,7 +81,7 @@ describe('7a. append-only tables', () => {
     expect(
       (await db.app.query(`SELECT 1 FROM fee_schedules WHERE model_version = 'QBX-1/r8he'`))
         .rowCount,
-    ).toBe(2);
+    ).toBe(3); // EQUITY, ETF and (M7a, migration 0025) CRYPTO
     await db.app.query(
       `INSERT INTO idempotency_keys (account_id, key, request_hash) VALUES ($1::uuid, 'k1', '\\x00')`,
       [acct],

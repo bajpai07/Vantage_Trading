@@ -6,17 +6,34 @@ export * from './cidr.js';
 
 export const APP_ENVS = ['local', 'test', 'staging', 'production'] as const;
 export const LOG_LEVELS = ['trace', 'debug', 'info', 'warn', 'error', 'fatal'] as const;
-export const MARKET_DATA_SOURCES = ['FIXTURE', 'PROVIDER'] as const;
+export const MARKET_DATA_SOURCES = ['FIXTURE', 'SIM', 'PROVIDER'] as const;
+/** Crypto feed mode (D-74): simulated or off. A live adapter would add a value here, behind the same provider interface. */
+export const CRYPTO_FEEDS = ['off', 'sim'] as const;
+/** Simulated stock session (D-76): the real NYSE calendar, or open around the clock (SIM only). */
+export const SIM_SESSIONS = ['NYSE', 'ALWAYS_OPEN'] as const;
 
 export type AppEnv = (typeof APP_ENVS)[number];
 export type LogLevel = (typeof LOG_LEVELS)[number];
 export type MarketDataSource = (typeof MARKET_DATA_SOURCES)[number];
+export type CryptoFeed = (typeof CRYPTO_FEEDS)[number];
+export type SimSession = (typeof SIM_SESSIONS)[number];
 
 export interface Config {
   readonly appEnv: AppEnv;
   readonly logLevel: LogLevel;
   readonly databaseUrl: string;
+  /** Source of stock and ETF quotes: FIXTURE (tests), SIM (simulated demo data) or PROVIDER (a licensed vendor, M3b). */
   readonly marketDataSource: MarketDataSource;
+  /** Crypto quotes (D-74): off, or sim (requires marketDataSource SIM). */
+  readonly cryptoFeed: CryptoFeed;
+  /** D-76: NYSE (real calendar) or ALWAYS_OPEN (simulated stocks open 24/7; only valid with marketDataSource SIM). */
+  readonly simSession: SimSession;
+  /** D-77: this is an explicit demo with virtual money; required in staging and production for a simulated source. */
+  readonly demoMode: boolean;
+  /** Seed of the simulated price model (D-78): the same seed and time always give the same prices. */
+  readonly simSeed: string;
+  /** How often the simulated feed publishes quotes, in milliseconds. */
+  readonly simTickMs: number;
   readonly port: number;
   /** The single origin allowed by CORS and the CSRF check, e.g. http://localhost:3000 */
   readonly webOrigin: string;
@@ -132,6 +149,13 @@ const appSchema = z.object({
   TRADING_ENABLED: z.enum(['true', 'false'], { error: 'must be true or false' }),
   ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
   ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'previews per user per minute'),
+  CRYPTO_FEED: z.enum(CRYPTO_FEEDS, { error: `must be one of: ${CRYPTO_FEEDS.join(', ')}` }),
+  SIM_SESSION: z.enum(SIM_SESSIONS, { error: `must be one of: ${SIM_SESSIONS.join(', ')}` }),
+  DEMO_MODE: z.enum(['true', 'false'], { error: 'must be true or false' }),
+  SIM_SEED: z.string().regex(/^[A-Za-z0-9._-]{1,64}$/, {
+    error: 'must be 1 to 64 characters: letters, digits, . _ -',
+  }),
+  SIM_TICK_MS: intInRange(200, 60000, 'milliseconds'),
 });
 
 function dbUser(url: string): string | undefined {
@@ -158,6 +182,11 @@ export function loadConfig(env: Env): Config {
       (env.APP_ENV === 'local' || env.APP_ENV === 'test' ? 'true' : undefined),
     ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
     ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: env.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE ?? '60',
+    CRYPTO_FEED: env.CRYPTO_FEED ?? 'off',
+    SIM_SESSION: env.SIM_SESSION ?? 'NYSE',
+    DEMO_MODE: env.DEMO_MODE ?? 'false',
+    SIM_SEED: env.SIM_SEED ?? 'vantage-demo-1',
+    SIM_TICK_MS: env.SIM_TICK_MS ?? '1000',
   });
   if (!app.success) {
     for (const i of app.error.issues) {
@@ -233,12 +262,40 @@ export function loadConfig(env: Env): Config {
     });
   }
 
+  // D-76: the 24/7 override only ever applies to the simulated feed.
+  if (env.SIM_SESSION === 'ALWAYS_OPEN' && env.MARKET_DATA_SOURCE !== 'SIM') {
+    issues.push({
+      name: 'SIM_SESSION',
+      rule: 'ALWAYS_OPEN is only valid when MARKET_DATA_SOURCE is SIM',
+    });
+  }
+  // D-74: crypto simulation runs inside the SIM provider (one provider per process).
+  if (env.CRYPTO_FEED === 'sim' && env.MARKET_DATA_SOURCE !== 'SIM') {
+    issues.push({ name: 'CRYPTO_FEED', rule: 'sim is only valid when MARKET_DATA_SOURCE is SIM' });
+  }
+  // D-77: a simulated source outside local and test must be an explicit demo.
+  if (
+    (env.APP_ENV === 'staging' || env.APP_ENV === 'production') &&
+    env.MARKET_DATA_SOURCE === 'SIM' &&
+    env.DEMO_MODE !== 'true'
+  ) {
+    issues.push({
+      name: 'DEMO_MODE',
+      rule: 'must be true when MARKET_DATA_SOURCE is SIM and APP_ENV is staging or production',
+    });
+  }
+
   if (!parsed.success || !app.success || issues.length > 0) throw new ConfigError(issues);
   return {
     appEnv: parsed.data.APP_ENV,
     logLevel: parsed.data.LOG_LEVEL,
     databaseUrl: parsed.data.DATABASE_URL,
     marketDataSource: parsed.data.MARKET_DATA_SOURCE,
+    cryptoFeed: app.data.CRYPTO_FEED,
+    simSession: app.data.SIM_SESSION,
+    demoMode: app.data.DEMO_MODE === 'true',
+    simSeed: app.data.SIM_SEED,
+    simTickMs: app.data.SIM_TICK_MS,
     port: app.data.PORT,
     webOrigin: app.data.WEB_ORIGIN,
     sessionIdleMinutes: app.data.SESSION_IDLE_MINUTES,

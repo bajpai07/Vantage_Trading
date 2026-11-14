@@ -412,7 +412,7 @@ describe('6. privileges of vantage_app on instruments and exchanges', () => {
   });
 
   it('exchanges (the calendars) are read-only: SELECT works, INSERT, UPDATE and DELETE are denied', async () => {
-    expect((await pool().query(`SELECT code FROM exchanges`)).rowCount).toBe(3);
+    expect((await pool().query(`SELECT code FROM exchanges`)).rowCount).toBe(4); // XNYS, XNAS, ARCX and (M7a) CRYPTO
     await expect(pool().query(`UPDATE exchanges SET calendar = '{}'::jsonb`)).rejects.toMatchObject(
       { code: '42501' },
     );

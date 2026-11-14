@@ -1,7 +1,13 @@
 import { Inject, Injectable } from '@nestjs/common';
 import type { QuoteItem } from '@vantage/contracts';
 import { freshness } from '@vantage/market-model';
-import type { FreshnessState, InstrumentStatus, MarketState, Quote } from '@vantage/market-model';
+import type {
+  AssetClassKind,
+  FreshnessState,
+  InstrumentStatus,
+  MarketState,
+  Quote,
+} from '@vantage/market-model';
 import { parse, sub } from '@vantage/money';
 import { CLOCK, QUOTE_STORE } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
@@ -11,6 +17,10 @@ import { CalendarService } from './calendar.service.js';
 import type { QuoteStore } from './quote.store.js';
 
 const price = (p: string): string => parse(p).toCanonicalString();
+
+/** The class the shared freshness function limits quote age by: crypto has the tighter real-time window. */
+const freshnessClass = (assetClass: string): AssetClassKind =>
+  assetClass === 'ETF' ? 'ETF' : assetClass === 'CRYPTO' ? 'CRYPTO' : 'EQUITY';
 
 /** What order execution needs: the shared freshness verdict and the accepted quote behind it (null if none). */
 export interface QuoteSnapshotResult {
@@ -49,7 +59,7 @@ export class QuoteService {
       instrument.status as InstrumentStatus,
       { state: calendarState?.state ?? 'CLOSED' },
       now,
-      { feedEnabled: feed.enabled, assetClass: instrument.assetClass === 'ETF' ? 'ETF' : 'EQUITY' },
+      { feedEnabled: feed.enabled, assetClass: freshnessClass(instrument.assetClass) },
     );
     if (quote === null || result.state === 'UNAVAILABLE') {
       return { freshness: 'UNAVAILABLE', quote: null };
@@ -88,7 +98,7 @@ export class QuoteService {
         row.status as InstrumentStatus,
         { state: calendarState?.state ?? 'CLOSED' },
         now,
-        { feedEnabled: feed.enabled, assetClass: row.assetClass === 'ETF' ? 'ETF' : 'EQUITY' },
+        { feedEnabled: feed.enabled, assetClass: freshnessClass(row.assetClass) },
       );
       if (quote === null || result.state === 'UNAVAILABLE') {
         out.push({ ...base, known: true, freshness: 'UNAVAILABLE', ageSeconds: null, asOf: null });

@@ -114,9 +114,9 @@ export async function syncInstrumentMaster(
         instrumentId = newId();
         await client.query(
           `INSERT INTO instruments (id, symbol, name, asset_class, exchange_id, quote_currency, tick_size,
-                                    qty_step, min_qty, fractional_ok, status, tradable_in, attrs, updated_at)
+                                    qty_step, min_qty, fractional_ok, status, tradable_in, attrs, updated_at, base_asset)
            VALUES ($1::uuid, $2, $3, $4::asset_class, $5::uuid, $6, $7::numeric, $8::numeric, $9::numeric,
-                   $10, $11::instrument_status, $12::text[], $13::jsonb, $14)`,
+                   $10, $11::instrument_status, $12::text[], $13::jsonb, $14, $15)`,
           [
             instrumentId,
             e.symbol,
@@ -132,6 +132,7 @@ export async function syncInstrumentMaster(
             [...(e.tradableIn ?? [])],
             JSON.stringify(e.attrs),
             now,
+            e.baseAsset ?? null,
           ],
         );
         inserted += 1;

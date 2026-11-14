@@ -65,7 +65,7 @@ describe('1. instrument master sync', () => {
       `SELECT count(*) AS n, array_agg(DISTINCT attrs->>'source') AS sources, array_agg(DISTINCT tick_size::text) AS tick,
               array_agg(DISTINCT fractional_ok) AS frac, array_agg(DISTINCT qty_step::text) AS step,
               array_agg(DISTINCT min_qty::text) AS minq, array_agg(DISTINCT tradable_in) AS gates
-         FROM instruments`,
+         FROM instruments WHERE asset_class <> 'CRYPTO'`, // the crypto rows (M7a migration 0024) are simulated, not fixture
     );
     expect(Number(r.rows[0]?.n)).toBe(FIXTURE_INSTRUMENTS.length);
     expect(r.rows[0]?.sources).toEqual(['FIXTURE']);
@@ -145,7 +145,9 @@ describe('1. instrument master sync', () => {
     expect(delisted.rows[0]?.status).toBe('DELISTED');
     real.setExtraEntries([]);
     await syncInstrumentMaster(pool(), real, deps()); // restore ACTIVE
-    const total = await db.migrator.query<{ n: string }>(`SELECT count(*) AS n FROM instruments`);
+    const total = await db.migrator.query<{ n: string }>(
+      `SELECT count(*) AS n FROM instruments WHERE asset_class <> 'CRYPTO'`,
+    );
     expect(Number(total.rows[0]?.n)).toBe(FIXTURE_INSTRUMENTS.length); // nothing was ever deleted
   });
 
@@ -185,6 +187,7 @@ describe('2. search', () => {
       entitlement: 'DELAYED',
       delaySeconds: 900,
       source: 'FIXTURE',
+      tradable: true,
     });
   });
 
@@ -303,8 +306,10 @@ describe('3. exchange calendar data', () => {
     const r = await db.migrator.query<{ code: string; timezone: string; calendar: unknown }>(
       `SELECT code, timezone, calendar FROM exchanges ORDER BY code`,
     );
-    expect(r.rows.map((x) => x.code)).toEqual(['ARCX', 'XNAS', 'XNYS']);
-    for (const row of r.rows) {
+    expect(r.rows.map((x) => x.code)).toEqual(['ARCX', 'CRYPTO', 'XNAS', 'XNYS']);
+    const crypto = r.rows.find((x) => x.code === 'CRYPTO');
+    expect(parseCalendar(crypto?.calendar)).toMatchObject({ alwaysOpen: true });
+    for (const row of r.rows.filter((x) => x.code !== 'CRYPTO')) {
       expect(row.timezone).toBe('America/New_York');
       expect(parseCalendar(row.calendar)).toEqual(NYSE_CALENDAR_2026_2027);
     }

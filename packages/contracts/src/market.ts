@@ -33,8 +33,10 @@ export const InstrumentItem = z.strictObject({
   /** What the active data feed entitles us to show for this instrument. */
   entitlement: Entitlement,
   delaySeconds: z.number().int().min(0),
-  /** Label of the active data source, e.g. FIXTURE. */
+  /** Label of the active data source, e.g. SIM. */
   source: z.string().min(1),
+  /** false when orders cannot be placed for this instrument yet (for example crypto before M8): prices only. */
+  tradable: z.boolean(),
 });
 export type InstrumentItem = z.output<typeof InstrumentItem>;
 
@@ -147,12 +149,36 @@ export type ReorderWatchlistItemsRequest = z.output<typeof ReorderWatchlistItems
  * GET /v1/market/feed (no session needed): which market data source is active, so a client can say so honestly
  * (for example the "Simulated market data" banner while the source is FIXTURE). Carries no user data.
  */
+/** M7a (D-75): how one asset class is being fed, in words the banner can show. */
+export const FEED_MODES = ['LIVE', 'SIMULATED', 'FIXTURE'] as const;
+export const FEED_SESSIONS = ['NYSE', 'ALWAYS_OPEN', '24_7'] as const;
+export const FEED_STATUSES = ['CONNECTED', 'DISCONNECTED', 'OFF'] as const;
+export const FeedSource = z.strictObject({
+  assetClass: AssetClass,
+  /** The label every quote of this class carries (SIM, FIXTURE, or an exchange name for a live feed). */
+  source: z.string().min(1),
+  /** A human label, for example "Simulated market data". */
+  label: z.string().min(1),
+  mode: z.enum(FEED_MODES),
+  /** NYSE: the real exchange calendar. ALWAYS_OPEN: a simulated stock session that never closes. 24_7: crypto. */
+  session: z.enum(FEED_SESSIONS),
+  /** CONNECTED: the feed published recently. DISCONNECTED: it did not. OFF: switched off. */
+  status: z.enum(FEED_STATUSES),
+  /** When the feed last published a quote for this class (null if it never has). */
+  lastMessageAt: z.iso.datetime().nullable(),
+});
+export type FeedSource = z.output<typeof FeedSource>;
+
 export const FeedInfoResponse = z.strictObject({
-  /** Label of the active data source, e.g. FIXTURE. */
+  /** Label of the main (stock) data source, e.g. SIM. Kept for older clients; see `sources` for every class. */
   source: z.string().min(1),
   entitlement: Entitlement,
   delaySeconds: z.number().int().min(0),
   /** false when the feed kill switch is on: quotes are then UNAVAILABLE. */
   enabled: z.boolean(),
+  /** D-77: this is a demo with virtual money (the API was started with DEMO_MODE=true). */
+  demoMode: z.boolean(),
+  /** One entry per asset class the API serves, each with its own truthful label and status. */
+  sources: z.array(FeedSource).max(10),
 });
 export type FeedInfoResponse = z.output<typeof FeedInfoResponse>;

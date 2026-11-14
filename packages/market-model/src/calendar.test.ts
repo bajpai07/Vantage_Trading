@@ -313,3 +313,41 @@ describe('sessionsBetween (the equity snapshot job)', () => {
     expect(exchangeDate(CAL, new Date('2026-11-11T03:00:00Z'))).toBe('2026-11-10'); // 22:00 the evening before in New York
   });
 });
+
+describe('a market that never closes (alwaysOpen, M7a)', () => {
+  const crypto = parseCalendar({
+    version: 1,
+    timezone: 'UTC',
+    regular: { open: '00:00', close: '23:59', days: [0, 1, 2, 3, 4, 5, 6] },
+    alwaysOpen: true,
+    holidays: [],
+    earlyCloses: [],
+    coverage: { from: '2026-01-01', to: '2026-01-02' },
+  });
+
+  it.each([
+    '2026-11-15T12:00:00Z', // a Sunday
+    '2026-12-25T03:00:00Z', // a holiday elsewhere
+    '2026-11-10T23:59:30Z', // the minute a regular day would close
+    '2031-01-01T00:00:00Z', // far outside the stated coverage: still open
+  ])('is OPEN at %s with no next open or close', (instant) => {
+    const s = marketState(crypto, new Date(instant));
+    expect(s).toMatchObject({
+      state: 'OPEN',
+      session: 'REGULAR',
+      reason: null,
+      note: 'Open 24/7',
+      nextOpen: null,
+      nextClose: null,
+    });
+  });
+
+  it('control: the same schedule without the flag is closed on a Sunday', () => {
+    const regular = { ...crypto, alwaysOpen: undefined };
+    expect(marketState(regular, new Date('2026-11-15T12:00:00Z')).state).toBe('CLOSED');
+  });
+
+  it('the flag must be a boolean (a bad calendar is refused, not guessed)', () => {
+    expect(() => parseCalendar({ ...crypto, alwaysOpen: 'yes' })).toThrow(CalendarError);
+  });
+});
