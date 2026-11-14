@@ -22,7 +22,7 @@ test.describe('1. register lands on an empty portfolio', () => {
     await expect(page.getByTestId('metric-total-return')).toContainText('0.00');
     await expect(page.getByTestId('empty-state')).toContainText('No positions yet');
     await expect(page.getByTestId('feed-banner')).toHaveText(
-      'Simulated market data — not real prices',
+      'Simulated market data — not real prices · Demo mode — virtual money, no real trading',
     );
     await expect(page.getByTestId('virtual-money-notice')).toContainText(
       'Virtual money — not real trading',
@@ -39,7 +39,9 @@ test.describe('1. register lands on an empty portfolio', () => {
   }) => {
     await page.goto('/login');
     const banner = page.getByTestId('feed-banner');
-    await expect(banner).toHaveText('Simulated market data — not real prices');
+    await expect(banner).toHaveText(
+      'Simulated market data — not real prices · Demo mode — virtual money, no real trading',
+    );
     await expect(banner.getByRole('button')).toHaveCount(0);
     await page.reload();
     await expect(banner).toBeVisible();

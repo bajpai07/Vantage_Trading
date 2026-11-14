@@ -76,7 +76,7 @@ export function marketLine(exchange: string, status: MarketStatusResponse | null
       state: 'OPEN',
       text:
         e.nextClose === null
-          ? `${e.name} is open.`
+          ? `${e.name} is open${e.note === null ? '' : ` (${e.note})`}.`
           : `${e.name} is open until ${formatUtc(e.nextClose)}${e.session === 'EARLY_CLOSE' ? ' (early close)' : ''}.`,
     };
   }

@@ -25,7 +25,7 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         </a>
         <FeedBanner feed={feed} />
         {children}
-        <Footer />
+        <Footer feed={feed} />
       </body>
     </html>
   );

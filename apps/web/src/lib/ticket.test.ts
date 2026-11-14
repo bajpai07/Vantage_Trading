@@ -11,6 +11,7 @@ import type { ApiFailure, ApiFailureKind } from './api-core';
 import { REJECT_COPY } from './reject-copy';
 import { loginUrlFor, safeReturnTo } from './return-to';
 import {
+  NOT_TRADABLE_YET,
   disabledReason,
   initialPreview,
   initialTicket,
@@ -452,5 +453,31 @@ describe('return-to after a session expires mid-order', () => {
       '/login?reason=expired&next=%2Finstruments%2FAAPL',
     );
     expect(loginUrlFor('/something-else')).toBe('/login?reason=expired');
+  });
+});
+
+describe('instruments that have prices but no trading yet (crypto before M8)', () => {
+  const ready = (over: Partial<ReasonInput> = {}): ReasonInput => ({
+    symbol: 'BTC-USD',
+    side: 'BUY',
+    qty: '1',
+    status: 'ACTIVE',
+    quote: { freshness: 'REAL_TIME', bid: '67000.00', ask: '67000.01' },
+    refreshFailed: false,
+    positionQty: null,
+    preview: { ...initialPreview, status: 'ready', data: estimate() },
+    submitting: false,
+    ...over,
+  });
+
+  it('says "not tradable yet" for both sides, ahead of every other reason; control: tradable is allowed', () => {
+    for (const side of ['BUY', 'SELL'] as const) {
+      const r = disabledReason(ready({ side, tradable: false }));
+      expect(r).toContain('not tradable yet');
+      expect(r).toBe(NOT_TRADABLE_YET);
+    }
+    expect(disabledReason(ready({ tradable: false, qty: '' }))).toBe(NOT_TRADABLE_YET); // before "Enter a quantity"
+    expect(disabledReason(ready({ tradable: true }))).toBeNull();
+    expect(disabledReason(ready())).toBeNull(); // not stated: tradable (older callers)
   });
 });

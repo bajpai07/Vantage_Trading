@@ -256,6 +256,8 @@ export interface ReasonInput {
   readonly symbol: string;
   readonly side: Side;
   readonly qty: string;
+  /** false when orders cannot be placed for this instrument yet (crypto before M8): prices only. */
+  readonly tradable?: boolean;
   readonly status: InstrumentStatus;
   readonly quote: Pick<QuoteItem, 'freshness' | 'bid' | 'ask'>;
   /** The last price refresh failed (the quote on screen may be old). */
@@ -271,8 +273,13 @@ export interface ReasonInput {
  * status, quote state, quantity, position, then the preview's own answer (which carries every API reject code). A
  * disabled button always has one of these reasons next to it.
  */
+/** Shown for instruments that have prices but no trading yet (crypto before M8). */
+export const NOT_TRADABLE_YET =
+  'This instrument is not tradable yet: its prices are shown, but trading it arrives in a later update.';
+
 export function disabledReason(i: ReasonInput): string | null {
   if (i.submitting) return 'Placing your order…';
+  if (i.tradable === false) return NOT_TRADABLE_YET;
 
   const sv = statusView(i.status);
   if ((i.side === 'BUY' && sv.blocksBuy) || (i.side === 'SELL' && sv.blocksSell)) {

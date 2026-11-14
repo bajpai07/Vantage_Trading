@@ -126,7 +126,7 @@ test.describe('instrument page', () => {
     await expect(page.getByTestId('quote-age')).toHaveText('15 min ago'); // the API's ageSeconds (900), as words
     await expect(page.getByTestId('market-line')).toHaveAttribute('data-market-state', 'OPEN');
     await expect(page.getByTestId('feed-banner')).toHaveText(
-      'Simulated market data — not real prices',
+      'Simulated market data — not real prices · Demo mode — virtual money, no real trading',
     );
     await page.screenshot({
       path: '../../docs/phase-reports/m6b/instrument-1280.png',

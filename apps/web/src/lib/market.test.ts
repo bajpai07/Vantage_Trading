@@ -121,3 +121,29 @@ describe('quote polling backoff (D-73)', () => {
     expect(nextDelayMs(5000, 0)).toBe(5000);
   });
 });
+
+describe('marketLine for a market that never closes (M7a)', () => {
+  const never = (note: string | null): MarketStatusResponse => ({
+    asOf: '2026-11-15T12:00:00.000Z',
+    exchanges: [
+      {
+        exchange: 'CRYPTO',
+        name: 'Crypto (simulated, 24/7)',
+        state: 'OPEN',
+        session: 'REGULAR',
+        reason: null,
+        note,
+        localDate: '2026-11-15',
+        nextOpen: null,
+        nextClose: null,
+      },
+    ],
+  });
+  it('says it is open and why (the API note), with no invented close time', () => {
+    expect(marketLine('CRYPTO', never('Open 24/7'))).toEqual({
+      state: 'OPEN',
+      text: 'Crypto (simulated, 24/7) is open (Open 24/7).',
+    });
+    expect(marketLine('CRYPTO', never(null)).text).toBe('Crypto (simulated, 24/7) is open.');
+  });
+});
