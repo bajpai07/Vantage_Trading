@@ -58,3 +58,32 @@ The source of truth is `exchanges.calendar` (JSONB), validated with Zod when loa
 ## What M3b adds
 
 A real provider adapter (US delayed consolidated data under a commercial licence) behind the same `MarketDataProvider` interface, entitlement taken from the vendor contract, nightly master sync, a `provider_feeds` configuration with licence references, health monitoring, and (when needed) a Redis `QuoteStore`. M4 (trading) reads quotes through `QuoteService` and must treat `STALE`, `CLOSED` and `UNAVAILABLE` as not eligible.
+
+## Future: live crypto feed (M7a T1 evidence; NOT built)
+
+**Decision (founder, M7a): the demo uses simulated data for both stocks and crypto (D-74).** No live exchange adapter was built. This section records what was checked so a later phase does not have to start from zero, and what was **not** verified.
+
+### Connectivity (measured on this Windows machine, 2026-11-14, `scripts/probe-crypto-feeds.mjs`, 30 s each, no API key)
+
+| Stream                                                                                           | Connected  | Messages      | Notes                                                                                                                                         |
+| ------------------------------------------------------------------------------------------------ | ---------- | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `wss://data-stream.binance.vision` (`btcusdt@bookTicker`, `ethusdt@bookTicker`, `btcusdt@trade`) | yes, 1.5 s | 7,398 (245/s) | `bookTicker` has best bid/ask but no provider timestamp; `trade` has `E` and `T` (ms). Symbols look like `BTCUSDT` (quoted in USDT, not USD). |
+| `wss://stream.binance.com:9443` (same streams)                                                   | yes, 0.6 s | 6,282 (209/s) | same formats                                                                                                                                  |
+| `wss://ws-feed.exchange.coinbase.com` (`ticker`, `heartbeat`, BTC-USD, ETH-USD)                  | yes, 1.3 s | 426 (14/s)    | `ticker` has `best_bid`, `best_ask`, `price`, ISO `time`; products look like `BTC-USD`; a `heartbeat` channel exists                          |
+
+Latency against the local clock was about 600 ms at the median on all three; that is probably clock skew on this machine, not network delay (not investigated).
+
+### Terms: what was and was not read
+
+Read on 2026-11-14 by automated fetch. **Nothing below is a conclusion that the terms permit a demo or public display.**
+
+- **Binance.** The market-data-only FAQ, https://github.com/binance/binance-spot-api-docs/blob/master/faqs/market_data_only.md, says: "These URLs do not require any authentication (i.e. The API key is not necessary) and serve only public market data." It says nothing about permitted uses, redistribution or display. The Terms of Use page, https://www.binance.com/en/terms, returned only navigation and footer text (the body did not load), and the guessed API-terms and market-data-terms pages returned HTTP 404. **Binance's terms were therefore not read.**
+- **Coinbase.** The Exchange docs overview, https://docs.cdp.coinbase.com/exchange/docs/websocket-overview, says: "Market Data APIs provide market data and are public." and "By accessing the Exchange Market Data API, you agree to be bound by the Market Data Terms of Use". That document, https://www.coinbase.com/legal/market_data, returned HTTP 403 to the automated fetch (the developer terms page too). **Coinbase's Market Data Terms of Use were therefore not read.** A fetch with a browser-style identity was considered and not done: it would have been getting around a block.
+- **Forum and community answers** about whether a portfolio demo is allowed (as relayed by the founder) are not authoritative and are not relied on.
+
+### What a future phase needs before showing live prices
+
+1. **Written confirmation of the terms**, for the use intended (a portfolio demo at first, a public product later): either the exchange's market-data terms read in full and quoted with URL and date, or a written answer from the exchange. A public launch needs this in writing; a hobby demo should not assume it.
+2. **Or a licensed data provider** behind the existing `MarketDataProvider` interface (this is also what M3b plans for US stocks).
+3. The adapter would implement `MarketDataProvider` and publish through the existing ingest and validator; the engine, the quote store and the API contracts do not change (`mode: LIVE` and a new `source` label are already part of the `/v1/market/feed` contract). It would need reconnect with backoff and jitter, a heartbeat watchdog (a connected but silent socket is not healthy), a symbol map (`BTCUSDT` or `BTC-USD` to `BTC-USD`), bounded queues, a kill switch, and a local fake WebSocket server for tests (no test may use the internet).
+4. Notes from the probe for that adapter: Binance quotes in USDT (a USD display would need a stated assumption or a USD pair), `bookTicker` has no timestamp (freshness would come from receive time), Coinbase `ticker` carries `time`.
