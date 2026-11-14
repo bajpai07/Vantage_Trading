@@ -121,7 +121,7 @@ export function SearchBox() {
   return (
     <div className="relative w-full md:max-w-sm" data-testid="search">
       <label htmlFor={`${uid}-input`} className="sr-only">
-        Search stocks and ETFs
+        Search stocks, ETFs and crypto
       </label>
       <input
         ref={inputRef}
@@ -135,7 +135,7 @@ export function SearchBox() {
         autoComplete="off"
         spellCheck={false}
         maxLength={40}
-        placeholder="Search stocks and ETFs   ( / )"
+        placeholder="Search stocks, ETFs and crypto   ( / )"
         value={query}
         onChange={(e) => {
           setQuery(e.target.value);
@@ -169,7 +169,7 @@ export function SearchBox() {
         ) : null}
         {state.kind === 'empty' ? (
           <div className="px-3 py-2 text-[13px] text-text-1" data-testid="search-empty">
-            No stocks or ETFs match “{state.query}”. Try a ticker (AAPL) or part of a name.
+            No stocks, ETFs or crypto match “{state.query}”. Try a ticker (AAPL) or part of a name.
           </div>
         ) : null}
         {state.kind === 'error' ? (

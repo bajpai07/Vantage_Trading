@@ -197,3 +197,23 @@ test.describe('crypto is display-only until M8', () => {
     expect(await reconcile(email)).toEqual({ accounts: 1, violations: [] });
   });
 });
+
+test.describe('the NYSE session at a weekend instant (control for the 24/7 session)', () => {
+  test('the same Sunday instant is CLOSED: the stock cannot be traded, the banner has no 24/7 text, crypto is still open', async ({
+    page,
+  }) => {
+    await control('/clock', { iso: '2026-11-15T12:00:00.000Z' });
+    await control('/sim-refresh', {});
+    await register(page);
+    await expect(page.getByTestId('feed-banner')).toHaveText(
+      'Simulated market data — not real prices · Demo mode — virtual money, no real trading',
+    );
+    await page.goto('/instruments/AAPL');
+    await expect(page.getByTestId('market-line')).toHaveAttribute('data-market-state', 'CLOSED');
+    await enterQty(page, '2');
+    await expect(page.getByTestId('ticket-reason')).toContainText('market is closed');
+    await expect(page.getByTestId('review-button')).toBeDisabled();
+    await page.goto('/instruments/BTC-USD');
+    await expect(page.getByTestId('market-line')).toHaveAttribute('data-market-state', 'OPEN');
+  });
+});

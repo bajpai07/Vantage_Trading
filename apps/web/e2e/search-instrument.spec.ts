@@ -19,6 +19,7 @@ test.describe('search', () => {
     await register(page);
     await page.keyboard.press('/');
     await expect(search(page)).toBeFocused();
+    await expect(search(page)).toHaveAttribute('placeholder', /Search stocks, ETFs and crypto/);
     await page.keyboard.type('aapl');
     const first = page.getByTestId('search-option').first();
     await expect(first).toBeVisible();
@@ -52,7 +53,7 @@ test.describe('search', () => {
   }) => {
     await register(page);
     await search(page).fill('zzzzq9');
-    await expect(page.getByTestId('search-empty')).toContainText('No stocks or ETFs match');
+    await expect(page.getByTestId('search-empty')).toContainText('No stocks, ETFs or crypto match');
     await expect(page.getByTestId('search-error')).toHaveCount(0);
     await expect(page.getByTestId('search-status')).toHaveText('No results');
     await search(page).fill('AAPL');

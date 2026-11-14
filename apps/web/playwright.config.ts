@@ -3,13 +3,20 @@
 // `pnpm verify` or CI yet: run it with `pnpm --filter web test:e2e` (see docs/web.md, including `playwright install`).
 import { defineConfig, devices } from '@playwright/test';
 
-export const WEB_PORT = 3100;
-export const API_PORT = 4100;
-export const CONTROL_PORT = 4101;
+// M7b: a second profile (E2E_PROFILE=always-open) runs a separate API with SIM_SESSION=ALWAYS_OPEN on its own ports
+// (see e2e/run-all.mjs); the default profile is the NYSE session.
+export const PROFILE = process.env.E2E_PROFILE ?? 'default';
+const ALT = PROFILE === 'always-open';
+export const WEB_PORT = ALT ? 3200 : 3100;
+export const API_PORT = ALT ? 4200 : 4100;
+export const CONTROL_PORT = ALT ? 4201 : 4101;
+export const SIM_SESSION = ALT ? 'ALWAYS_OPEN' : 'NYSE';
 export const POLL_MS = 2000;
 
 export default defineConfig({
   testDir: './e2e',
+  // the always-open profile runs only its own spec; the default profile never runs it
+  ...(ALT ? { testMatch: /always-open\.spec\.ts/ } : { testIgnore: /always-open\.spec\.ts/ }),
   // one worker: the tests share one API process, one database and one injected clock
   fullyParallel: false,
   workers: 1,

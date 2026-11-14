@@ -2,7 +2,7 @@
 // Playwright starts the web server first (webServer), then runs this; the API address is fixed in playwright.config.ts.
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
-import { API_PORT, CONTROL_PORT, WEB_PORT } from '../playwright.config';
+import { API_PORT, CONTROL_PORT, SIM_SESSION, WEB_PORT } from '../playwright.config';
 
 const repoRoot = join(import.meta.dirname, '..', '..', '..');
 
@@ -31,6 +31,7 @@ export default async function globalSetup(): Promise<void> {
         TSX_TSCONFIG_PATH: join(repoRoot, 'apps', 'api', 'tsconfig.json'),
         E2E_API_PORT: String(API_PORT),
         E2E_CONTROL_PORT: String(CONTROL_PORT),
+        E2E_SIM_SESSION: SIM_SESSION,
         E2E_WEB_ORIGIN: `http://localhost:${String(WEB_PORT)}`,
       },
     },
