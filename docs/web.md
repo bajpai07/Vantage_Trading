@@ -163,3 +163,7 @@ Labelled fields with inline errors tied by `aria-invalid` and `aria-describedby`
 - The idempotency key is memory-only: reloading the page during an uncertain order loses it, and the dialog points the user to the Orders page to check.
 - Not-found instrument pages answer HTTP 200 (the streamed loading state commits the status first); they are marked `noindex`.
 - No Storybook, visual regression or Lighthouse budget yet (DESIGN_SYSTEM section 10); the e2e suite is not in CI.
+
+## Dependency notes
+
+- Next.js is pinned to 16.4.5 (N1, D-84): the lowest 16.x release fixing GHSA-mfr8-8qww-v76h and GHSA-vc7v-qv4w-wrv8. Older 16.2.0 to 16.4.4 builds stop with a SecurityFatalError advisory notice. This app uses none of the affected features (no `use cache`, `unstable_cache`, root params or Cache Components).
