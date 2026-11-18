@@ -16,7 +16,7 @@ What a user owns and how they are doing: cash, positions valued at current marks
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | mark          | **The bid** for a long position (what you could sell at); the last price only when there is no positive bid, labelled `markBasis: LAST`; never the ask |
 | marketValue   | `qty x mark` (valued positions only)                                                                                                                   |
-| costBasis     | `sum over open lots of qty_open x cost` (fees are not part of cost)                                                                                    |
+| costBasis     | `sum over open lots of cost_remaining` (M8, D-85; fees are not part of cost)                                                                           |
 | unrealisedPnl | `marketValue - costBasis` (valued positions only)                                                                                                      |
 | realisedPnl   | `-(REALIZED_PNL ledger balance)`, which equals the sum of the lot closures' `trading_pnl_usd` (gross of fees)                                          |
 | fees          | the `FEES` ledger balance                                                                                                                              |
@@ -33,7 +33,7 @@ Every read satisfies, with exact decimals (this is invariant I10 restated for th
 ```
 cash + costBasis + fees - realisedPnl = initialCapital        (10,000 for every account today)
 equity = cash + positionsValue          positionsValue = sum of the valued positions' marketValue
-costBasis (total) = sum of the positions' costBasis = POSITION_COST ledger balance = sum of qty_open x cost over the lots
+costBasis (total) = sum of the positions' costBasis = POSITION_COST ledger balance = sum of cost_remaining over the lots (exact, zero tolerance)
 realisedPnl = sum of lot-closure trading P&L = sum of the SELL executions' realisedPnl
 ```
 

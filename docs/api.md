@@ -116,7 +116,7 @@ A user can only see and change their own lists. Another user's list, an unknown 
 
 ### Instrument item
 
-`symbol`, `name`, `assetClass`, `exchange` (MIC, e.g. `XNAS`; `CRYPTO` for the simulated crypto market), `currency`, `status`, `tickSize`, `entitlement` (`REAL_TIME` or `DELAYED`), `delaySeconds`, `source` (e.g. `SIM`), `tradable` (M7a: `false` when orders cannot be placed yet, for example crypto before M8; its prices are still shown).
+`symbol`, `name`, `assetClass`, `exchange` (MIC, e.g. `XNAS`; `CRYPTO` for the simulated crypto market), `currency`, `status`, `tickSize`, `entitlement` (`REAL_TIME` or `DELAYED`), `delaySeconds`, `source` (e.g. `SIM`), `tradable` (`false` when the instrument has no MVP gate in `tradable_in`: orders are rejected, its prices are still shown; crypto is tradable since M8), `qtyStep` and `minQty` (M8: plain decimal strings; `"1"` and `"1"` for stocks and ETFs, `"0.00000001"` for crypto).
 
 ### Quote item
 
@@ -181,7 +181,7 @@ The simulated crypto market is the exchange `CRYPTO` in `GET /v1/market/status`:
 
 ## Orders and positions (M4b)
 
-Market orders only (BUY and SELL, whole shares, USD), filled synchronously (D-30). All routes need a valid session; `POST` also needs the CSRF `Origin` rule. The account is always the session user's MAIN account: **no account id appears in any URL or body**.
+Market orders only (BUY and SELL, USD; whole shares for stocks and ETFs, fractional quantities up to 8 decimals for crypto since M8), filled synchronously (D-30). All routes need a valid session; `POST` also needs the CSRF `Origin` rule. The account is always the session user's MAIN account: **no account id appears in any URL or body**.
 
 | Method and path      | Success                      | Notes                                                                                                                 |
 | -------------------- | ---------------------------- | --------------------------------------------------------------------------------------------------------------------- |
@@ -205,7 +205,7 @@ Cookie: vantage_session=…
 ```
 
 - `symbol`: ticker, case-insensitive. `side`: `BUY` or `SELL`. `type`: `MARKET`.
-- `qty`: a positive whole number, as a JSON integer or a digit string, at most **1,000,000** shares (`MAX_ORDER_QTY`). Floats, zero, negatives, exponents and leading zeros are rejected.
+- `qty` (M8): a positive decimal **string** with at most **8 decimals** (or a JSON integer), at most **1,000,000** (`MAX_ORDER_QTY`). It is normalised to one canonical spelling (`"0.0025000"` and `"0.0025"` are the same request; `"10.0"` is `"10"`). Floats, zero, negatives, exponents (`1e-3`), `NaN`, a leading dot (`.5`), a trailing dot, leading zeros and more than 8 decimals are `400 VALIDATION_ERROR`. The instrument's own rules are then applied by the engine as rejects: a quantity that is not a multiple of `qtyStep` (a stock with a fraction) is a REJECTED order with `QTY_STEP_VIOLATION`, below `minQty` is `QTY_BELOW_MIN`. Quantities come back as exact strings (`"0.0025"`), never as numbers.
 - `referencePrice`: the price the user saw (the ask for a BUY, the bid for a SELL): a plain decimal string greater than zero, at most 12 integer and 8 decimal digits. A JSON number is rejected. It feeds the 1% price collar (`PRICE_MOVED`).
 - The server decides the account, the instrument, the quote and its freshness, the fee schedule, the kill switch and the time (D-59).
 
@@ -325,6 +325,7 @@ What a MARKET order would do **right now**. Auth and the CSRF `Origin` rule as f
 ```
 
 - All amounts are canonical decimal strings; the browser does no money arithmetic. `estimatedProceeds` is set for a SELL only (notional minus fee). `estimatedCashAfter` is negative when a purchase could not be paid.
+- `maxQty` (M8, D-90): the largest quantity this account could order right now, rounded down to the instrument's step: for a BUY what the cash pays for at the estimated price and fee, for a SELL the position. `"0"` when not even the minimum fits, `null` when it cannot be known (no usable quote, not tradable, trading paused). It is computed by the server with the same engine code as the order (a test proves `maxQty` fills and `maxQty` plus one step is rejected); the browser only fills it into the form. It does not depend on the `qty` in the request (any valid quantity gets the same answer).
 - **Same rules as the real order.** It calls the same engine function (`decideForCommand`) on the current quote, fee schedule, cash and position, read in one read-only `REPEATABLE READ` transaction: **no locks, no writes**. A preview never blocks (or is blocked by) a real order on the same account.
 - A business reject is a normal `200` answer with `wouldFill: false` and a `rejectCode` (the same 13 codes). For a reject that comes after the price check (`PRICE_MOVED`, `INSUFFICIENT_BUYING_POWER`, `INSUFFICIENT_POSITION`, `FEE_EXCEEDS_PROCEEDS`) the estimate shows what the order would have cost; for earlier rejects (paused, halted, closed, stale, no quote, bad quantity) all estimates are `null` and `quote.freshness` says why. An unknown symbol is `404 INSTRUMENT_NOT_FOUND`.
 - **Advisory only.** The real order re-decides under its locks against the quote of that moment; the price can differ. `referencePrice` (the ask the user saw for a BUY, the bid for a SELL) feeds the same 1% collar as the real order.

@@ -18,7 +18,7 @@ import type { MarketOrderInput, OpenLot } from './index.js';
 const T0 = new Date('2026-11-10T15:00:00Z');
 const MAX_ORDER_QTY = '1000000';
 
-// BTC-USD: tick 0.01, step and minimum 0.00000001. Slippage 5 bps, commission 10 bps (D-87), grant 10,000.
+// BTC-USD: tick 0.01, step and minimum 0.00000001. Slippage 5 bps, commission 10 bps (D-88), grant 10,000.
 const BTC = {
   status: 'ACTIVE',
   tradableIn: ['MVP'],
@@ -299,7 +299,7 @@ describe('rules for crypto and fractional quantities', () => {
   });
 });
 
-describe('maxQty (D-89)', () => {
+describe('maxQty (D-90)', () => {
   const base = {
     side: 'BUY' as const,
     instrument: BTC,

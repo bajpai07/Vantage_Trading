@@ -65,7 +65,7 @@ export interface MarketOrderCommand {
     readonly tickSize: string;
     readonly minQty: string;
     readonly qtyStep: string;
-    /** Selects the collar (D-87: 2% for CRYPTO, 1% otherwise). Absent means the equity collar. */
+    /** Selects the collar (D-88: 2% for CRYPTO, 1% otherwise). Absent means the equity collar. */
     readonly assetClass?: string;
   };
   readonly side: OrderSide;

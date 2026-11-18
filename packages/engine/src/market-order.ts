@@ -278,7 +278,7 @@ export interface MaxQtyInput {
 }
 
 /**
- * D-89: the largest quantity, rounded DOWN to the instrument's step, that an order could be filled with right now.
+ * D-90: the largest quantity, rounded DOWN to the instrument's step, that an order could be filled with right now.
  *  - SELL: the position quantity (capped at maxOrderQty).
  *  - BUY: the largest q with cash >= notional(q) + fee(q), found by an exact binary search over multiples of the step on
  *    top of `priceOrder` (the same pricing as the decision; notional and fee never decrease with q, so the search is valid).
