@@ -6,7 +6,12 @@ import type { Logger } from '../../log.js';
 import { LOGGER, POOL } from '../../tokens.js';
 
 export type AuditAction =
-  'USER_REGISTERED' | 'LOGIN_SUCCEEDED' | 'LOGIN_FAILED' | 'LOGOUT' | 'ORDER_PLACED';
+  | 'USER_REGISTERED'
+  | 'LOGIN_SUCCEEDED'
+  | 'LOGIN_FAILED'
+  | 'LOGOUT'
+  | 'ORDER_PLACED'
+  | 'ORDER_CANCELLED';
 
 export interface AuditEntry {
   readonly action: AuditAction;

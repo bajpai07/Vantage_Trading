@@ -87,7 +87,15 @@ describe('1. golden vectors A, B, C through the HTTP API (exact strings)', () =>
     });
     expect(await cash(db, u.accountId)).toBe('9774.6373374800');
     const pos = await getAs(h, u, '/v1/positions');
-    expect(pos.body.positions).toEqual([{ symbol: 'BTC-USD', qty: '0.0025', avgCost: '90055.01' }]);
+    expect(pos.body.positions).toEqual([
+      {
+        symbol: 'BTC-USD',
+        qty: '0.0025',
+        qtyReserved: '0',
+        qtyAvailable: '0.0025',
+        avgCost: '90055.01',
+      },
+    ]);
     const lotA = await db.migrator.query(
       `SELECT qty_open, cost_remaining FROM position_lots WHERE account_id = $1::uuid`,
       [u.accountId],
@@ -131,7 +139,13 @@ describe('1. golden vectors A, B, C through the HTTP API (exact strings)', () =>
     });
     expect(identity(pb)).toBe('10000');
     expect((await getAs(h, u, '/v1/positions')).body.positions).toEqual([
-      { symbol: 'BTC-USD', qty: '0.0015', avgCost: '90055.01' },
+      {
+        symbol: 'BTC-USD',
+        qty: '0.0015',
+        qtyReserved: '0',
+        qtyAvailable: '0.0015',
+        avgCost: '90055.01',
+      },
     ]);
     const ex = await getAs(h, u, '/v1/executions');
     const sellExec = ex.body.executions.find((e: { side: string }) => e.side === 'SELL');

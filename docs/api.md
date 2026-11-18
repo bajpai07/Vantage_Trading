@@ -256,23 +256,65 @@ A rejected order has `status: "REJECTED"`, `filledQty: "0"`, `execution: null` a
 - Errors that are not orders (`400`, `404 INSTRUMENT_NOT_FOUND`, `429`, `500`) are not stored, so the same key may be retried.
 - `DUPLICATE_CLIENT_ORDER_ID` (`409`) is an **unreachable guard**: the key row and the order are written together under the account lock, so a second order with the same key cannot exist.
 
+### LIMIT orders (M8b-1, D-91 to D-97)
+
+`POST /v1/orders` takes `type`: `"MARKET"` (as above) or `"LIMIT"`:
+
+```json
+{
+  "symbol": "BTC-USD",
+  "side": "BUY",
+  "type": "LIMIT",
+  "qty": "0.0025",
+  "limitPrice": "89900.00",
+  "tif": "GTC"
+}
+```
+
+- `limitPrice`: required for LIMIT, **forbidden** for MARKET; a plain decimal string, greater than zero, at most 12 integer and 8 decimal digits (a JSON number is rejected). One canonical spelling (`"89900.00"` and `"89900"` are the same request for the idempotency hash). Whether it is a multiple of the instrument's tick is decided by the server: a persisted `REJECTED` order with `TICK_VIOLATION`, not a 400.
+- `tif`: `"DAY"` (default) or `"GTC"`. IOC, FOK and any other value are `400 VALIDATION_ERROR` ("must be DAY or GTC (IOC and FOK are not supported)"), and so are stop orders and any other `type` ("type must be MARKET or LIMIT (stop and other order types are not supported yet)"). A LIMIT order takes **no** `referencePrice` (limits have no collar) and a MARKET order takes no `tif`.
+- Response `201`, the same `OrderResponse` as for a market order, with the limit fields: `status` `ACCEPTED` (resting, reservation held), `FILLED` (it was marketable at accept and filled in the same request, D-97), or `REJECTED`. A limit order on a STALE, CLOSED or UNAVAILABLE quote is **accepted and rests** (it is just not evaluated until a live quote satisfies it).
+- Every order now carries `tif`, `limitPrice` (null for MARKET), `reservedUsd` (cash held for an open limit BUY, `"0.00"` otherwise), `expiresAt`, `filledQty` and `version` (+1 per state change). `status` is one of `ACCEPTED`, `FILLED`, `CANCELLED`, `EXPIRED`, `REJECTED`.
+- A BUY reserves `R = ceil8(qty x limit) + commission` in cash (D-92); a SELL reserves quantity (`qtyReserved`) and no cash. Free cash (`CASH`) and free quantity (position minus reserved) are what the rules check; a market SELL also may only use the free quantity (D-96).
+
+### POST /v1/orders/{id}/cancel (D-93)
+
+Needs the session, the CSRF `Origin` and an `Idempotency-Key` (same format and same key space as a placement). Synchronous `ACCEPTED -> CANCELLED`:
+
+```json
+{
+  "id": "…",
+  "status": "CANCELLED",
+  "reservedUsd": "0.00",
+  "version": 2,
+  "released": { "usd": "224.97475", "qty": "0" },
+  "…": "…"
+}
+```
+
+`released` is what went back (cash for a BUY, quantity for a SELL) and appears only on this answer. A replay of the same key and order returns the stored `200`; the same key for another request is `422 IDEMPOTENCY_MISMATCH`. An order that is no longer open (filled, cancelled, expired) is `409 ORDER_NOT_OPEN` (an order past its expiry is expired in the same transaction first, then 409); an order of another user, a malformed id and an unknown id are all `404 ORDER_NOT_FOUND`. A cancel racing a fill has exactly one outcome: whoever takes the account lock first wins, the other sees a terminal order.
+
 ### GET /v1/orders
 
-Query: `limit` (1 to 100, default 50), `cursor` (opaque: pass `nextCursor` unchanged), `status` (`FILLED` or `REJECTED`), `symbol`. Response `{ "orders": [OrderResponse…], "nextCursor": "…" | null }`. The cursor is a position `(created_at, id)`, so orders added between two page reads never cause a duplicate or a skip of orders further down the list. A malformed cursor, limit or filter is `400 VALIDATION_ERROR`.
+Query: `limit` (1 to 100, default 50), `cursor` (opaque: pass `nextCursor` unchanged), `status` (one exact status, or `open` = `ACCEPTED`, `closed` = every terminal state, `all` = no filter, the default), `symbol`. Response `{ "orders": [OrderResponse…], "nextCursor": "…" | null }`. The cursor is a position `(created_at, id)`, so orders added between two page reads never cause a duplicate or a skip of orders further down the list. A malformed cursor, limit or filter is `400 VALIDATION_ERROR`.
 
 ### GET /v1/positions
 
 ```json
-{ "positions": [{ "symbol": "AAPL", "qty": "10", "avgCost": "190.04" }] }
+{
+  "positions": [
+    { "symbol": "AAPL", "qty": "10", "qtyReserved": "0", "qtyAvailable": "10", "avgCost": "190.04" }
+  ]
+}
 ```
 
-Only positions with a quantity above zero. `avgCost` is the average cost per share of the open lots (fees are not part of cost).
+Only positions with a quantity above zero. `avgCost` is the average cost per share of the open lots (fees are not part of cost). `qtyReserved` is committed to open SELL limit orders and `qtyAvailable = qty - qtyReserved` is what a market or limit SELL may still use (M8b-1, D-96).
 
 ### Business reject codes (`rejectCode`)
 
 First failing rule wins (the order of this list). Details: [trading.md](trading.md).
 
-`TRADING_PAUSED`, `ACCOUNT_NOT_ACTIVE`, `INSTRUMENT_NOT_TRADABLE`, `INSTRUMENT_HALTED`, `QTY_BELOW_MIN`, `QTY_STEP_VIOLATION`, `NO_ELIGIBLE_QUOTE`, `MARKET_CLOSED`, `STALE_QUOTE`, `PRICE_MOVED`, `INSUFFICIENT_BUYING_POWER`, `INSUFFICIENT_POSITION`, `FEE_EXCEEDS_PROCEEDS`.
+`TRADING_PAUSED`, `ACCOUNT_NOT_ACTIVE`, `INSTRUMENT_NOT_TRADABLE`, `INSTRUMENT_HALTED`, `QTY_BELOW_MIN`, `QTY_STEP_VIOLATION`, `TICK_VIOLATION` (LIMIT orders only: the limit price is not a multiple of the tick), `NO_ELIGIBLE_QUOTE`, `MARKET_CLOSED`, `STALE_QUOTE`, `PRICE_MOVED`, `INSUFFICIENT_BUYING_POWER`, `INSUFFICIENT_POSITION`, `FEE_EXCEEDS_PROCEEDS`.
 
 ### Order error codes (HTTP errors)
 
@@ -286,6 +328,7 @@ First failing rule wins (the order of this list). Details: [trading.md](trading.
 | 404  | `ORDER_NOT_FOUND`           | Unknown, malformed or another user's order id.                                                                     |
 | 404  | `ACCOUNT_NOT_FOUND`         | The user has no MAIN account.                                                                                      |
 | 409  | `DUPLICATE_CLIENT_ORDER_ID` | Unreachable guard (see above).                                                                                     |
+| 409  | `ORDER_NOT_OPEN`            | `POST /v1/orders/{id}/cancel` on an order that is already filled, cancelled or expired (M8b-1).                    |
 | 422  | `IDEMPOTENCY_MISMATCH`      | Same `Idempotency-Key`, different request.                                                                         |
 | 429  | `RATE_LIMITED`              | More than `ORDER_RATE_LIMIT_PER_MINUTE` (default **30**) order requests per user per minute; `Retry-After` header. |
 | 500  | `INTERNAL_ERROR`            | Unexpected failure: the transaction is rolled back, the body has only a request id.                                |
@@ -296,6 +339,10 @@ First failing rule wins (the order of this list). Details: [trading.md](trading.
 - Every first placement writes an `audit_logs` row `ORDER_PLACED` (actor, order id, outcome and reject code, request id, IP). Request bodies, cookies and keys are never logged. If the audit insert fails it is logged and swallowed (the order stands), as for the M2 audit events.
 - `TRADING_ENABLED` (config; default `true` for local and test, **must be set explicitly** in staging and production): when `false` every new order is stored as `REJECTED` with `TRADING_PAUSED`.
 - Delayed quotes are executable (`allow_execution_on_delayed` is true in the MVP, TRADING_ENGINE section 3, D-09); `STALE`, `CLOSED` and `UNAVAILABLE` are not.
+
+### POST /v1/orders/preview for LIMIT orders (M8b-1)
+
+The same body as placing a LIMIT order. The answer adds `reserveUsd` (the cash that would be held back; `"0.00"` for a SELL), `marketable` (would it fill now on the current eligible quote; otherwise it would rest), `expiresAt` (when a resting order would expire) and, if marketable, the fill (`estimatedPrice`, `estimatedNotional`, `estimatedFee`, `estimatedProceeds` for a SELL). `wouldFill` means "would fill now" and `rejectCode` says why it would be rejected, so no reject code with `wouldFill: false` means the order would **rest**. `estimatedCashAfter` is the cash after the reserve (or after the fill). `maxQty` uses the RESERVE formula: the largest quantity, rounded down to the step, whose reserve fits the free cash (a BUY), or the free quantity (a SELL); it is accepted and `maxQty + step` is rejected (tests prove both).
 
 ### POST /v1/orders/preview (M6b, D-70)
 

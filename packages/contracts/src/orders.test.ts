@@ -204,8 +204,13 @@ describe('responses and code lists', () => {
     side: 'BUY',
     type: 'MARKET',
     status: 'FILLED',
+    tif: 'DAY',
     qty: '10',
     filledQty: '10',
+    limitPrice: null,
+    reservedUsd: '0.00',
+    expiresAt: null,
+    version: 1,
     rejectCode: null,
     createdAt: '2026-11-10T15:00:00.000Z',
     execution: {
@@ -239,12 +244,20 @@ describe('responses and code lists', () => {
   });
   it('a position response carries no market value or P&L', () => {
     expect(
-      PositionResponse.safeParse({ symbol: 'AAPL', qty: '10', avgCost: '190.04' }).success,
+      PositionResponse.safeParse({
+        symbol: 'AAPL',
+        qty: '10',
+        qtyReserved: '3',
+        qtyAvailable: '7',
+        avgCost: '190.04',
+      }).success,
     ).toBe(true);
     expect(
       PositionResponse.safeParse({
         symbol: 'AAPL',
         qty: '10',
+        qtyReserved: '3',
+        qtyAvailable: '7',
         avgCost: '190.04',
         marketValue: '1',
       }).success,
@@ -256,5 +269,122 @@ describe('responses and code lists', () => {
     expect(ORDER_REJECT_CODES).toHaveLength(14);
     expect(new Set(ORDER_ERROR_CODES).size).toBe(ORDER_ERROR_CODES.length);
     expect(ORDER_ERROR_CODES).toContain('IDEMPOTENCY_MISMATCH');
+  });
+});
+
+describe('LIMIT orders in the request contract (M8b-1, D-93)', () => {
+  const limit = {
+    symbol: 'btc-usd',
+    side: 'BUY',
+    type: 'LIMIT',
+    qty: '0.0025',
+    limitPrice: '89900.00',
+  };
+  const bad = (over: Record<string, unknown>, omit: string[] = []): boolean => {
+    const body: Record<string, unknown> = { ...limit, ...over };
+    for (const k of omit) delete body[k];
+    return !PlaceOrderRequest.safeParse(body).success;
+  };
+
+  it('a limit order: the limit price has one canonical spelling and the time in force defaults to DAY (control)', () => {
+    const r = PlaceOrderRequest.parse(limit);
+    expect(r).toEqual({
+      symbol: 'BTC-USD',
+      side: 'BUY',
+      type: 'LIMIT',
+      qty: '0.0025',
+      limitPrice: '89900',
+      tif: 'DAY',
+    });
+    expect(PlaceOrderRequest.parse({ ...limit, limitPrice: '89900.50', tif: 'GTC' })).toMatchObject(
+      {
+        limitPrice: '89900.5',
+        tif: 'GTC',
+      },
+    );
+    expect(PlaceOrderRequest.parse({ ...limit, limitPrice: '0.00000001' })).toMatchObject({
+      limitPrice: '0.00000001',
+    });
+    expect(PlaceOrderRequest.parse({ ...limit, limitPrice: '100' })).toMatchObject({
+      limitPrice: '100',
+    });
+  });
+
+  it.each([
+    ['a number', 89900],
+    ['zero', '0'],
+    ['zero with decimals', '0.00'],
+    ['negative', '-1.00'],
+    ['exponent', '1e5'],
+    ['nine decimals', '1.123456789'],
+    ['thirteen integer digits', '1234567890123.00'],
+    ['empty', ''],
+    ['comma', '89,900'],
+    ['leading plus', '+5'],
+    ['trailing dot', '5.'],
+  ])('limitPrice rejects %s', (_n, limitPrice) => {
+    expect(bad({ limitPrice })).toBe(true);
+  });
+
+  it('a limit order needs a limit price; a market order must not have one; the fields of the other type are rejected', () => {
+    expect(bad({}, ['limitPrice'])).toBe(true);
+    const market = {
+      symbol: 'AAPL',
+      side: 'BUY',
+      type: 'MARKET',
+      qty: '10',
+      referencePrice: '190.00',
+    };
+    expect(PlaceOrderRequest.safeParse(market).success).toBe(true); // control
+    expect(PlaceOrderRequest.safeParse({ ...market, limitPrice: '190.00' }).success).toBe(false);
+    expect(PlaceOrderRequest.safeParse({ ...market, tif: 'GTC' }).success).toBe(false);
+    expect(bad({ referencePrice: '89900.00' })).toBe(true); // limits have no collar, so no reference price
+  });
+
+  it('IOC, FOK and other time-in-force values are a clear validation error (control: DAY and GTC pass)', () => {
+    for (const tif of ['IOC', 'FOK', 'day', 'GTD', '']) {
+      const r = PlaceOrderRequest.safeParse({ ...limit, tif });
+      expect(r.success, tif).toBe(false);
+      if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('DAY or GTC');
+    }
+    for (const tif of ['DAY', 'GTC'])
+      expect(PlaceOrderRequest.safeParse({ ...limit, tif }).success).toBe(true);
+  });
+
+  it('stop orders and every other type are a clear validation error', () => {
+    for (const type of ['STOP', 'STOP_LIMIT', 'limit', 'OCO', '']) {
+      const r = PlaceOrderRequest.safeParse({ ...limit, type });
+      expect(r.success, type).toBe(false);
+      if (!r.success) expect(JSON.stringify(r.error.issues)).toContain('MARKET or LIMIT');
+    }
+  });
+
+  it('the quantity rules are the same as for a market order (decimals up to 8, canonical spelling)', () => {
+    expect(PlaceOrderRequest.parse({ ...limit, qty: '0.00250000' })).toMatchObject({
+      qty: '0.0025',
+    });
+    expect(bad({ qty: '1e-3' })).toBe(true);
+    expect(bad({ qty: '0.000000001' })).toBe(true);
+  });
+
+  it('the orders list filter accepts one exact status, open, closed or all, and nothing else', () => {
+    for (const status of [
+      'ACCEPTED',
+      'FILLED',
+      'CANCELLED',
+      'EXPIRED',
+      'REJECTED',
+      'open',
+      'closed',
+      'all',
+    ]) {
+      expect(ListOrdersQuery.safeParse({ status }).success, status).toBe(true);
+    }
+    for (const status of ['OPEN', 'pending', ''])
+      expect(ListOrdersQuery.safeParse({ status }).success, status).toBe(false);
+  });
+
+  it('ORDER_NOT_OPEN is an error code of the order endpoints', () => {
+    expect(ORDER_ERROR_CODES).toContain('ORDER_NOT_OPEN');
   });
 });

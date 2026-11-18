@@ -27,7 +27,27 @@ All amounts are rounded to 8 decimal places, HALF_EVEN, **once per leg**; the ca
 | `buyFillLegs({ qty, price, fee })`         | `C = round8(qty x price)`, `f = round8(fee)`: `CASH -(C+f)`, `POSITION_COST +C`, `FEES +f` |
 | `sellFillLegs({ qty, price, fee, basis })` | `P`, `f`, `B` rounded: `CASH +(P-f)`, `FEES +f`, `POSITION_COST -B`, `REALIZED_PNL -(P-B)` |
 
-Fills are synchronous (D-39): there is no `RESERVED` movement. USD only in M1.
+Market fills are synchronous (D-39): no `RESERVED` movement. USD only. M8b-1 adds the reservation recipes for resting LIMIT orders:
+
+| Recipe                                                          | Legs                                                                                                                                        |
+| --------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reserveLegs({ amount })` (ORDER_RESERVE, a limit BUY accepted) | `CASH -R`, `RESERVED +R`                                                                                                                    |
+| `releaseLegs({ amount })` (ORDER_RELEASE, cancel or expiry)     | `RESERVED -R`, `CASH +R`, with R the STORED `orders.reserved_usd`, never recomputed                                                         |
+| `buyFillFromReserveLegs({ qty, price, fee, reserved })`         | `C = round8(qty x price)`, `f`: `RESERVED -R`, `POSITION_COST +C`, `FEES +f`, `CASH +(R - C - f)` (zero leg omitted); requires `C + f <= R` |
+
+A limit SELL moves no ledger account: it reserves quantity (`positions.qty_reserved`), and its fill uses the ordinary `sellFillLegs`.
+
+Vectors (BTC-USD, 5 bps slippage, 10 bps commission, grant 10,000; hard-coded in the tests):
+
+| Step                                                          | Legs                                                                                                   | Cash after             |
+| ------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------ | ---------------------- |
+| E: BUY 0.0025 LIMIT 89,900.00 accepted (R = 224.75 + 0.22475) | `CASH -224.97475`, `RESERVED +224.97475`                                                               | 9,775.02525            |
+| E: filled at 89,894.93 (C 224.737325, f 0.22473732)           | `RESERVED -224.97475`, `POSITION_COST +224.737325`, `FEES +0.22473732`, `CASH +0.01268768`             | 9,775.03793768         |
+| F: marketable at accept, fills at the limit 89,900.00         | ORDER_RESERVE as above, then `RESERVED -224.97475`, `POSITION_COST +224.75`, `FEES +0.22475` (CASH +0) | 9,775.02525            |
+| G: resting SELL 0.001 LIMIT 90,100.00 filled at the limit     | `CASH +90.0099`, `FEES +0.0901`, `POSITION_COST -90.05501`, `REALIZED_PNL -0.04499`                    | (cash moves only here) |
+| H: cancel or expire of E's accept                             | `RESERVED -224.97475`, `CASH +224.97475`                                                               | 10,000                 |
+
+Invariants with a reservation (zero tolerance, `reconcileAccount`): I3 `CASH`, `RESERVED` and `POSITION_COST` are never negative; **I7** the `RESERVED` balance equals the sum of `reserved_usd` over the open orders; I4' `positions.qty_reserved` equals the remaining quantity of the open SELL orders; I5' a terminal order has `reserved_usd = 0`; I10 conservation includes `RESERVED`.
 
 ### Golden vectors (hard-coded in the tests; each sums to zero)
 

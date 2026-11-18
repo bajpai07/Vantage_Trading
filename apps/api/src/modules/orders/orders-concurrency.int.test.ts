@@ -105,7 +105,9 @@ describe('5. concurrency over HTTP', () => {
     expect(dec(await cash(db, u.accountId))).toBe('398.08');
     expect(await counts(db, u.accountId)).toMatchObject({ orders: 50, executions: 24 });
     const pos = await getAs(h, u, '/v1/positions');
-    expect(pos.body.positions).toEqual([{ symbol: 'AAPL', qty: '96', avgCost: '100.02' }]);
+    expect(pos.body.positions).toEqual([
+      { symbol: 'AAPL', qty: '96', qtyReserved: '0', qtyAvailable: '96', avgCost: '100.02' },
+    ]);
     expect(await reconcileAccount(db.app, u.accountId)).toEqual([]);
   });
 

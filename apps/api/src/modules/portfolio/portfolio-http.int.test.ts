@@ -80,6 +80,8 @@ describe('1. golden valuation vectors through HTTP (orders placed through the M4
       {
         symbol: 'AAPL',
         qty: '10',
+        qtyReserved: '0',
+        qtyAvailable: '10',
         avgCost: '190.04',
         costBasis: '1900.40',
         valuation: 'VALUED',

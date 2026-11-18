@@ -21,9 +21,16 @@ export const IDEMPOTENCY_KEY_PATTERN = /^[A-Za-z0-9._:-]{8,128}$/;
 export const IdempotencyKey = z.string().regex(IDEMPOTENCY_KEY_PATTERN);
 
 export const OrderSide = z.enum(['BUY', 'SELL']);
-export const OrderType = z.enum(['MARKET']);
-/** Order states a synchronous market order can end in. */
-export const OrderStatus = z.enum(['FILLED', 'REJECTED']);
+export const OrderType = z.enum(['MARKET', 'LIMIT']);
+/** Time in force of a LIMIT order (D-93): DAY and GTC only; IOC and FOK are not supported. */
+export const OrderTif = z.enum(['DAY', 'GTC']);
+/**
+ * Order states (D-91). A MARKET order is FILLED or REJECTED. A LIMIT order is REJECTED, or ACCEPTED (resting) and later FILLED,
+ * CANCELLED or EXPIRED; the last three are terminal.
+ */
+export const OrderStatus = z.enum(['ACCEPTED', 'FILLED', 'CANCELLED', 'EXPIRED', 'REJECTED']);
+/** The orders list filter (T5): one exact status, or open (ACCEPTED), closed (every terminal state) or all (the default). */
+export const OrderStatusFilter = z.enum([...OrderStatus.options, 'open', 'closed', 'all']);
 
 /**
  * Business reject codes, in the order the engine checks them (first failure wins). A reject is an order with
@@ -36,7 +43,7 @@ export const ORDER_REJECT_CODES = [
   'INSTRUMENT_HALTED',
   'QTY_BELOW_MIN',
   'QTY_STEP_VIOLATION',
-  'TICK_VIOLATION',
+  'TICK_VIOLATION', // LIMIT orders: the limit price is not a multiple of the instrument's tick
   'NO_ELIGIBLE_QUOTE',
   'MARKET_CLOSED',
   'STALE_QUOTE',
@@ -56,6 +63,7 @@ export const ORDER_ERROR_CODES = [
   'CSRF_REJECTED', // 403 bad Origin
   'INSTRUMENT_NOT_FOUND', // 404
   'ORDER_NOT_FOUND', // 404 (also another user's order)
+  'ORDER_NOT_OPEN', // 409 cancel of an order that is no longer open (filled, cancelled or expired)
   'IDEMPOTENCY_MISMATCH', // 422 same key, different request
   'RATE_LIMITED', // 429
   'INTERNAL_ERROR', // 500 (with a request id; nothing is stored)
@@ -93,20 +101,66 @@ const qtyInput = z
     { message: `must be at most ${String(MAX_ORDER_QTY)}` },
   );
 
-/** POST /v1/orders body. Unknown fields (an account id, a price, a time, a fee) are rejected. */
-export const PlaceOrderRequest = z.strictObject({
-  symbol: SymbolSchema,
-  side: OrderSide,
-  type: OrderType,
-  /** A positive decimal quantity, at most 8 decimals: a digit string (or a JSON integer). Normalised to canonical text. */
-  qty: qtyInput,
-  /** The price the user saw: the ask for a BUY, the bid for a SELL. A plain decimal string, greater than zero. */
+/**
+ * A limit price: a plain decimal string, greater than zero, at most 12 integer digits and 8 decimals, normalised to one canonical
+ * spelling ("89900.00" and "89900" are the same request: trailing zeros are removed), so the idempotency hash is stable. Whether it
+ * is a multiple of the instrument's tick is decided by the server (a persisted TICK_VIOLATION reject), not here.
+ */
+const limitPriceInput = z
+  .string()
+  .regex(REFERENCE_PRICE_PATTERN, 'must be a plain decimal string')
+  .refine((p) => /[1-9]/.test(p), { message: 'must be greater than zero' })
+  .transform((p) => (p.includes('.') ? p.replace(/0+$/, '').replace(/\.$/, '') : p));
+
+/**
+ * Static, input-free explanations for the two validation errors a user is most likely to hit with a LIMIT order (M8b-1): an
+ * unsupported order type (stop orders and the rest) and an unsupported time in force (IOC and FOK). The API appends these to its
+ * "Invalid request: field" message so the 400 says what is supported.
+ */
+export const ORDER_TYPE_ERROR =
+  'type must be MARKET or LIMIT (stop and other order types are not supported yet)';
+export const ORDER_TIF_ERROR = 'must be DAY or GTC (IOC and FOK are not supported)';
+export const CLEAR_VALIDATION_MESSAGES: ReadonlySet<string> = new Set([
+  ORDER_TYPE_ERROR,
+  ORDER_TIF_ERROR,
+]);
+
+const orderBase = { symbol: SymbolSchema, side: OrderSide, qty: qtyInput };
+
+/** A MARKET order: the price the user saw (the ask for a BUY, the bid for a SELL) feeds the price collar. */
+const MarketOrderRequest = z.strictObject({
+  ...orderBase,
+  type: z.literal('MARKET'),
+  /** A plain decimal string, greater than zero. */
   referencePrice: z
     .string()
     .regex(REFERENCE_PRICE_PATTERN, 'must be a plain decimal string')
     .refine((p) => /[1-9]/.test(p), { message: 'must be greater than zero' }),
 });
+
+/** A LIMIT order (M8b-1, D-93): a limit price and a time in force (DAY by default). No reference price: limits have no collar. */
+const LimitOrderRequest = z.strictObject({
+  ...orderBase,
+  type: z.literal('LIMIT'),
+  limitPrice: limitPriceInput,
+  tif: z.enum(OrderTif.options, { error: ORDER_TIF_ERROR }).default('DAY'),
+});
+
+/**
+ * POST /v1/orders body. Unknown fields (an account id, a price, a time, a fee) are rejected, and so is a field of the other order
+ * type: a limit price on a MARKET order, a reference price or a time in force where they do not belong. Stop orders and every
+ * other type are a 400 with a clear message.
+ */
+export const PlaceOrderRequest = z.discriminatedUnion(
+  'type',
+  [MarketOrderRequest, LimitOrderRequest],
+  {
+    error: ORDER_TYPE_ERROR,
+  },
+);
 export type PlaceOrderRequest = z.output<typeof PlaceOrderRequest>;
+export type LimitPlaceOrderRequest = Extract<PlaceOrderRequest, { type: 'LIMIT' }>;
+export type MarketPlaceOrderRequest = Extract<PlaceOrderRequest, { type: 'MARKET' }>;
 
 const decimalString = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, 'must be a decimal string');
 
@@ -130,8 +184,20 @@ export const OrderResponse = z.strictObject({
   side: OrderSide,
   type: OrderType,
   status: OrderStatus,
+  /** Time in force (DAY for a market order, where it has no effect). */
+  tif: OrderTif,
   qty: decimalString,
   filledQty: decimalString,
+  /** The limit price of a LIMIT order (canonical), null for a MARKET order. */
+  limitPrice: MoneyString.nullable(),
+  /** Cash held back for an open limit BUY (the stored amount that a cancel or expiry releases); "0.00" otherwise. */
+  reservedUsd: MoneyString,
+  /** When an open limit order expires; null for a MARKET order and for a rejected order. */
+  expiresAt: z.iso.datetime().nullable(),
+  /** Increases by one with every state change (the guarded transition of D-91). */
+  version: z.number().int().min(1),
+  /** Only on the answer to a cancel: what was released (cash for a BUY, quantity for a SELL). */
+  released: z.strictObject({ usd: MoneyString, qty: decimalString }).nullable().optional(),
   /** Set when status is REJECTED, otherwise null. */
   rejectCode: OrderRejectCode.nullable(),
   createdAt: z.iso.datetime(),
@@ -150,7 +216,7 @@ export const ListOrdersQuery = z.strictObject({
     .optional(),
   /** Opaque: pass `nextCursor` from the previous page unchanged. */
   cursor: z.string().min(1).max(200).optional(),
-  status: OrderStatus.optional(),
+  status: OrderStatusFilter.optional(),
   symbol: SymbolSchema.optional(),
 });
 export type ListOrdersQuery = z.output<typeof ListOrdersQuery>;
@@ -166,6 +232,10 @@ export type ListOrdersResponse = z.output<typeof ListOrdersResponse>;
 export const PositionResponse = z.strictObject({
   symbol: z.string(),
   qty: decimalString,
+  /** Quantity committed to open SELL limit orders (M8b-1, D-96); a SELL, market or limit, may only use qtyAvailable. */
+  qtyReserved: decimalString,
+  /** qty - qtyReserved. */
+  qtyAvailable: decimalString,
   /** Average cost per share of the open lots, USD (8 decimals at most). */
   avgCost: MoneyString,
 });
@@ -231,6 +301,15 @@ export const OrderPreviewResponse = z.strictObject({
     .regex(/^[0-9]+(\.[0-9]+)?$/)
     .nullable()
     .optional(),
+  /**
+   * LIMIT orders only (M8b-1): the cash that would be held back (a BUY's reserve R, D-92; "0.00" for a SELL, which reserves
+   * quantity), whether the order is marketable on the current eligible quote (it would then fill now at the estimated price,
+   * otherwise it would rest), and when it would expire. For a LIMIT preview `wouldFill` means "would fill now" and
+   * `rejectCode` says why it would be rejected, so an order with no reject code and wouldFill false would REST.
+   */
+  reserveUsd: MoneyString.nullable().optional(),
+  marketable: z.boolean().nullable().optional(),
+  expiresAt: z.iso.datetime().nullable().optional(),
   quote: OrderPreviewQuote,
   disclaimer: z.literal(ORDER_PREVIEW_DISCLAIMER),
   /** Server time of this preview. */

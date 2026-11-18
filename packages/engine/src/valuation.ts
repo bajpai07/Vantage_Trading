@@ -96,6 +96,8 @@ export function valuePosition(p: PositionInput): PositionValuation {
 
 export interface PortfolioInput {
   readonly cash: string;
+  /** The RESERVED ledger balance: cash held back for open limit BUY orders (M8b-1). Absent means none. */
+  readonly reserved?: string;
   readonly positions: readonly PositionValuation[];
   /** Realised P&L = minus the REALIZED_PNL ledger balance (equals the sum of lot-closure trading P&L). */
   readonly realisedPnl: string;
@@ -107,6 +109,8 @@ export interface PortfolioInput {
 
 export interface PortfolioSummary {
   readonly cash: string;
+  /** The RESERVED balance (M8b-1); "0" when nothing is reserved. */
+  readonly reserved: string;
   /** Sum of marketValue over VALUED positions only. */
   readonly positionsValue: string;
   /** Sum of unrealisedPnl over VALUED positions only. */
@@ -116,7 +120,7 @@ export interface PortfolioSummary {
   readonly valuedCostBasis: string;
   readonly unvaluedCostBasis: string;
   readonly unvaluedCount: number;
-  /** D-61: cash + positionsValue (valued positions only). */
+  /** D-61 and TRADING_ENGINE section 5: cash + reserved + positionsValue (valued positions only). */
   readonly equity: string;
   /** True when at least one position is UNAVAILABLE: the totals then exclude it, explicitly. */
   readonly incomplete: boolean;
@@ -147,10 +151,12 @@ export function summarisePortfolio(input: PortfolioInput): PortfolioSummary {
       unvaluedCount += 1;
     }
   }
-  const equity = add(parse(input.cash), positionsValue);
+  const reserved = parse(input.reserved ?? '0');
+  const equity = add(add(parse(input.cash), reserved), positionsValue);
   const incomplete = unvaluedCount > 0;
   return {
     cash: parse(input.cash).toString(),
+    reserved: reserved.toString(),
     positionsValue: positionsValue.toString(),
     unrealisedPnl: unrealised.toString(),
     costBasis: add(valuedCost, unvaluedCost).toString(),
@@ -167,17 +173,18 @@ export function summarisePortfolio(input: PortfolioInput): PortfolioSummary {
 }
 
 /**
- * The ledger identity (I10 restated): cash + costBasis + fees - realisedPnl = initial capital (no reservations
- * exist yet). Returns the left-hand side; a correct set of books gives exactly the initial capital.
+ * The ledger identity (I10 restated): cash + reserved + costBasis + fees - realisedPnl = initial capital. `reserved` is the
+ * RESERVED balance (M8b-1; absent means none). Returns the left-hand side; a correct set of books gives exactly the initial capital.
  */
 export function capitalIdentity(v: {
   readonly cash: string;
+  readonly reserved?: string;
   readonly costBasis: string;
   readonly fees: string;
   readonly realisedPnl: string;
 }): string {
   return sub(
-    add(add(parse(v.cash), parse(v.costBasis)), parse(v.fees)),
+    add(add(add(parse(v.cash), parse(v.reserved ?? '0')), parse(v.costBasis)), parse(v.fees)),
     parse(v.realisedPnl),
   ).toString();
 }

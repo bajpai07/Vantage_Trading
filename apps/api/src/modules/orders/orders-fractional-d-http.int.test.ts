@@ -103,7 +103,15 @@ describe('golden vector D over HTTP', () => {
     let s = await state();
     expect(s.lot).toEqual([['0.3', '27.01']]);
     expect(s.costBasis).toBe('27.01');
-    expect(s.positions).toEqual([{ symbol: 'DCOIN', qty: '0.3', avgCost: '90.03333333' }]);
+    expect(s.positions).toEqual([
+      {
+        symbol: 'DCOIN',
+        qty: '0.3',
+        qtyReserved: '0',
+        qtyAvailable: '0.3',
+        avgCost: '90.03333333',
+      },
+    ]);
 
     await setQuote(h, 'DCOIN', '100.00', '100.00');
     // piece 1
@@ -116,7 +124,15 @@ describe('golden vector D over HTTP', () => {
     expect(s.lot).toEqual([['0.2', '18.00666667']]);
     expect(s.ledgerCost).toBe('18.00666667');
     expect(s.costBasis).toBe('18.00666667');
-    expect(s.positions).toEqual([{ symbol: 'DCOIN', qty: '0.2', avgCost: '90.03333335' }]); // 18.00666667 / 0.2
+    expect(s.positions).toEqual([
+      {
+        symbol: 'DCOIN',
+        qty: '0.2',
+        qtyReserved: '0',
+        qtyAvailable: '0.2',
+        avgCost: '90.03333335',
+      },
+    ]); // 18.00666667 / 0.2
     expect(await reconcileAccount(db.migrator, u.accountId)).toEqual([]);
 
     // piece 2: the exact tie 9.003333335 rounds half to even

@@ -118,7 +118,7 @@ export class OrdersController {
   constructor(@Inject(OrdersService) private readonly orders: OrdersService) {}
 
   /**
-   * Places a MARKET order. 201 with the order, FILLED or REJECTED (a business reject is an order, not an HTTP
+   * Places a MARKET or LIMIT order. 201 with the order, FILLED or REJECTED (a business reject is an order, not an HTTP
    * error). A replay of the same Idempotency-Key and request returns the stored status and body.
    */
   @Post()
@@ -155,6 +155,35 @@ export class OrdersController {
   async preview(@Req() req: AppRequest): Promise<OrderPreviewResponse> {
     const body = new ZodValidationPipe(PreviewOrderRequest).transform(req.body);
     return this.orders.preview(userOf(req), body);
+  }
+
+  /**
+   * Cancels an open LIMIT order (D-93): synchronous ACCEPTED -> CANCELLED, releasing exactly the stored reservation. Needs an
+   * Idempotency-Key like a placement: a replay returns the stored 200; an order that is no longer open is 409 ORDER_NOT_OPEN;
+   * an order of another user is 404 (the same answer as an unknown id).
+   */
+  @Post(':id/cancel')
+  @HttpCode(200)
+  @UseGuards(OrderRateLimitGuard)
+  async cancel(
+    @Param('id', new OrderIdPipe()) id: string,
+    @Headers('idempotency-key') key: string | undefined,
+    @Req() req: AppRequest,
+    @Res({ passthrough: true }) res: Response,
+  ): Promise<OrderResponse> {
+    if (key === undefined || !IDEMPOTENCY_KEY_PATTERN.test(key)) {
+      throw new AppError(
+        400,
+        'IDEMPOTENCY_KEY_INVALID',
+        'Idempotency-Key header is required: 8 to 128 characters from A-Z a-z 0-9 . _ : -',
+      );
+    }
+    const done = await this.orders.cancel(userOf(req), id, key, {
+      requestId: req.requestId,
+      ip: clientIp(req),
+    });
+    res.status(done.status);
+    return done.body;
   }
 
   @Get()

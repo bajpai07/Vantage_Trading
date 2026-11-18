@@ -15,6 +15,9 @@ export const ValuationState = z.enum(['VALUED', 'UNAVAILABLE']);
 export const PortfolioPosition = z.strictObject({
   symbol: z.string(),
   qty: decimalString,
+  /** Quantity committed to open SELL limit orders and what is still free to sell (M8b-1, D-96). */
+  qtyReserved: decimalString,
+  qtyAvailable: decimalString,
   /** Average cost per share of the open lots (canonical, not rounded). */
   avgCost: MoneyString,
   /** Sum over the open lots of qty x cost (2 dp). */
@@ -44,6 +47,8 @@ export type PortfolioPosition = z.output<typeof PortfolioPosition>;
 
 const totalsFields = {
   cash: MoneyString,
+  /** Cash held back for open limit BUY orders (M8b-1): CASH is what is free, equity counts both. */
+  reservedUsd: MoneyString,
   /** Sum of the market values of the VALUED positions only. */
   positionsValue: MoneyString,
   /** Cost basis of ALL open positions, valued or not (reconciles with the ledger). */
@@ -52,7 +57,7 @@ const totalsFields = {
   unrealisedPnl: MoneyString,
   realisedPnl: MoneyString,
   fees: MoneyString,
-  /** cash + positionsValue (valued positions only). */
+  /** cash + reservedUsd + positionsValue (valued positions only), TRADING_ENGINE section 5. */
   equity: MoneyString,
 };
 

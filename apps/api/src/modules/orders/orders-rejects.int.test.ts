@@ -249,6 +249,7 @@ describe('rejects over HTTP', () => {
 describe('coverage', () => {
   it('every reject code of the engine and of the contract was exercised over HTTP, and the two lists agree', () => {
     expect([...ORDER_REJECT_CODES]).toEqual([...REJECT_RULE_ORDER]);
-    expect([...tested].sort()).toEqual([...ORDER_REJECT_CODES].sort());
+    // TICK_VIOLATION (M8b-1) applies to LIMIT orders only; it is exercised over HTTP in orders-limit-http.int.test.ts
+    expect([...tested, 'TICK_VIOLATION'].sort()).toEqual([...ORDER_REJECT_CODES].sort());
   });
 });

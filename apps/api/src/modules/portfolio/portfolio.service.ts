@@ -4,7 +4,7 @@ import { HISTORY_MAX_ROWS, PortfolioHistoryResponse, PortfolioResponse } from '@
 import type { PortfolioHistoryQuery, PortfolioPosition } from '@vantage/contracts';
 import { roundDisplay, summarisePortfolio, valuePosition } from '@vantage/engine';
 import type { PositionValuation } from '@vantage/engine';
-import { parse } from '@vantage/money';
+import { parse, sub } from '@vantage/money';
 import { AppError } from '../../common/errors.js';
 import { CLOCK, POOL } from '../../tokens.js';
 import type { Clock } from '../../tokens.js';
@@ -20,6 +20,7 @@ interface PositionRow {
   asset_class: string;
   exchange: string;
   qty: string;
+  qty_reserved: string;
   avg_cost_local: string;
   cost_basis: string;
 }
@@ -28,6 +29,8 @@ interface PositionRow {
 export interface PortfolioSnapshotData {
   readonly initialCapital: string;
   readonly cash: string;
+  /** The RESERVED ledger balance: cash held back for open limit BUY orders (M8b-1). */
+  readonly reserved: string;
   readonly fees: string;
   /** Minus the REALIZED_PNL ledger balance. */
   readonly realisedPnl: string;
@@ -54,11 +57,13 @@ export class PortfolioService {
         id: string;
         initial_capital: string;
         cash: string | null;
+        reserved: string | null;
         fees: string | null;
         realised: string | null;
       }>(
         `SELECT a.id, a.initial_capital,
                 MAX(la.balance) FILTER (WHERE la.type = 'CASH')          AS cash,
+                MAX(la.balance) FILTER (WHERE la.type = 'RESERVED')      AS reserved,
                 MAX(la.balance) FILTER (WHERE la.type = 'FEES')          AS fees,
                 -MAX(la.balance) FILTER (WHERE la.type = 'REALIZED_PNL') AS realised
            FROM accounts a
@@ -71,7 +76,7 @@ export class PortfolioService {
       if (acct === undefined) throw new AppError(404, 'ACCOUNT_NOT_FOUND', 'Account not found');
       const p = await client.query<PositionRow>(
         `SELECT i.symbol, i.status::text AS status, i.asset_class::text AS asset_class, e.code AS exchange,
-                p.qty, p.avg_cost_local, COALESCE(l.cost, 0) AS cost_basis
+                p.qty, p.qty_reserved, p.avg_cost_local, COALESCE(l.cost, 0) AS cost_basis
            FROM positions p
            JOIN instruments i ON i.id = p.instrument_id
            JOIN exchanges e ON e.id = i.exchange_id
@@ -86,6 +91,7 @@ export class PortfolioService {
       return {
         initialCapital: acct.initial_capital,
         cash: acct.cash ?? '0',
+        reserved: acct.reserved ?? '0',
         fees: acct.fees ?? '0',
         realisedPnl: acct.realised ?? '0',
         positions: p.rows,
@@ -134,6 +140,7 @@ export class PortfolioService {
     }
     const s = summarisePortfolio({
       cash: data.cash,
+      reserved: data.reserved,
       positions: valuations,
       realisedPnl: data.realisedPnl,
       fees: data.fees,
@@ -147,6 +154,8 @@ export class PortfolioService {
         return {
           symbol: v.symbol,
           qty: parse(v.qty).toString(),
+          qtyReserved: parse(row?.qty_reserved ?? '0').toString(),
+          qtyAvailable: sub(parse(v.qty), parse(row?.qty_reserved ?? '0')).toString(),
           avgCost: avg,
           costBasis: display(v.costBasis),
           valuation: 'VALUED',
@@ -166,6 +175,8 @@ export class PortfolioService {
       return {
         symbol: v.symbol,
         qty: parse(v.qty).toString(),
+        qtyReserved: parse(row?.qty_reserved ?? '0').toString(),
+        qtyAvailable: sub(parse(v.qty), parse(row?.qty_reserved ?? '0')).toString(),
         avgCost: avg,
         costBasis: display(v.costBasis),
         valuation: 'UNAVAILABLE',
@@ -181,6 +192,7 @@ export class PortfolioService {
 
     const totals = {
       cash: s.cash,
+      reservedUsd: s.reserved,
       positionsValue: s.positionsValue,
       costBasis: s.costBasis,
       unrealisedPnl: s.unrealisedPnl,

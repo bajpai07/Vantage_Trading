@@ -31,8 +31,8 @@ Reservations do not exist yet (market orders only), so `RESERVED` is 0 and is no
 Every read satisfies, with exact decimals (this is invariant I10 restated for the read side):
 
 ```
-cash + costBasis + fees - realisedPnl = initialCapital        (10,000 for every account today)
-equity = cash + positionsValue          positionsValue = sum of the valued positions' marketValue
+cash + reservedUsd + costBasis + fees - realisedPnl = initialCapital        (10,000 for every account today)
+equity = cash + reservedUsd + positionsValue          positionsValue = sum of the valued positions' marketValue
 costBasis (total) = sum of the positions' costBasis = POSITION_COST ledger balance = sum of cost_remaining over the lots (exact, zero tolerance)
 realisedPnl = sum of lot-closure trading P&L = sum of the SELL executions' realisedPnl
 ```

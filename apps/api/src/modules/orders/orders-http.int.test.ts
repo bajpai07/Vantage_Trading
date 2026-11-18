@@ -57,8 +57,13 @@ describe('1. golden vector A through HTTP: register, buy 10 AAPL', () => {
       side: 'BUY',
       type: 'MARKET',
       status: 'FILLED',
+      tif: 'DAY',
       qty: '10',
       filledQty: '10',
+      limitPrice: null,
+      reservedUsd: '0.00',
+      expiresAt: null,
+      version: 1,
       rejectCode: null,
       createdAt: OPEN_TIME,
       execution: {
@@ -127,7 +132,11 @@ describe('1. golden vector A through HTTP: register, buy 10 AAPL', () => {
 
     const pos = track(await getAs(h, alice, '/v1/positions'));
     expect(pos.status).toBe(200);
-    expect(pos.body).toEqual({ positions: [{ symbol: 'AAPL', qty: '11', avgCost: '190.04' }] });
+    expect(pos.body).toEqual({
+      positions: [
+        { symbol: 'AAPL', qty: '11', qtyReserved: '0', qtyAvailable: '11', avgCost: '190.04' },
+      ],
+    });
     expect(JSON.stringify(pos.body)).not.toMatch(/marketValue|pnl|PnL|unrealized/i);
     expect(await reconcileAccount(db.app, alice.accountId)).toEqual([]);
   });
