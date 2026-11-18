@@ -81,7 +81,7 @@ describe('7a. append-only tables', () => {
     expect(
       (await db.app.query(`SELECT 1 FROM fee_schedules WHERE model_version = 'QBX-1/r8he'`))
         .rowCount,
-    ).toBe(3); // EQUITY, ETF and (M7a, migration 0025) CRYPTO
+    ).toBe(4); // EQUITY, ETF, CRYPTO v1 (M7a, migration 0025) and CRYPTO v2 (M8, migration 0027)
     await db.app.query(
       `INSERT INTO idempotency_keys (account_id, key, request_hash) VALUES ($1::uuid, 'k1', '\\x00')`,
       [acct],
@@ -99,7 +99,7 @@ describe('7a. append-only tables', () => {
   });
 });
 
-describe('7b. position_lots: only qty_open and closed_at may change', () => {
+describe('7b. position_lots: only qty_open, cost_remaining and closed_at may change', () => {
   it('changing cost_local_per_unit (or any other column) fails: permission denied for the app, a trigger for the migrator', async () => {
     for (const col of [
       'cost_local_per_unit = 1',
@@ -112,11 +112,11 @@ describe('7b. position_lots: only qty_open and closed_at may change', () => {
     }
     await expectMessage(
       db.migrator.query(`UPDATE position_lots SET cost_local_per_unit = 1`),
-      /only qty_open and closed_at may change/,
+      /only qty_open, cost_remaining and closed_at may change/,
     );
     await expectMessage(
       db.migrator.query(`UPDATE position_lots SET qty_initial = qty_initial + 1`),
-      /only qty_open and closed_at may change/,
+      /only qty_open, cost_remaining and closed_at may change/,
     );
   });
 
@@ -125,7 +125,7 @@ describe('7b. position_lots: only qty_open and closed_at may change', () => {
     try {
       await c.query('BEGIN');
       const r = await c.query(
-        `UPDATE position_lots SET qty_open = qty_open - 1 WHERE account_id = $1::uuid AND qty_open = 1`,
+        `UPDATE position_lots SET qty_open = qty_open - 1, cost_remaining = 0 WHERE account_id = $1::uuid AND qty_open = 1`,
         [acct],
       );
       expect(r.rowCount).toBe(1); // the column-limited UPDATE itself is allowed
@@ -195,8 +195,8 @@ async function handBuilt(
     );
     if (opts.skipLot !== true) {
       await c.query(
-        `INSERT INTO position_lots (id, account_id, instrument_id, open_execution_id, qty_initial, qty_open, cost_local_per_unit, cost_usd_per_unit, opened_at)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $5::numeric, 100, 100, $6)`,
+        `INSERT INTO position_lots (id, account_id, instrument_id, open_execution_id, qty_initial, qty_open, cost_local_per_unit, cost_usd_per_unit, opened_at, cost_remaining)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $5::numeric, 100, 100, $6, $5::numeric * 100)`,
         [newId(), opts.execAccount ?? account, inst.id, executionId, qty, NOW],
       );
     }
