@@ -101,6 +101,8 @@ export class InstrumentsController {
       currency: r.currency,
       status: r.status as InstrumentItem['status'],
       tickSize: parse(r.tickSize).toCanonicalString(),
+      qtyStep: parse(r.qtyStep).toString(),
+      minQty: parse(r.minQty).toString(),
       entitlement: feed.entitlement,
       delaySeconds: feed.delaySeconds,
       source: r.attrsSource ?? feed.source,

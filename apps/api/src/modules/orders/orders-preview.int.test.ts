@@ -74,6 +74,8 @@ describe('3. the preview equals what the real order then produces (the M4a golde
       estimatedCashAfter: '8099.60',
       estimatedProceeds: null,
       slippageBps: '2',
+      // M8 (D-90): the most the 10,000.00 cash buys at 190.04 (52 x 190.04 = 9,882.08; 53 x 190.04 = 10,072.12 is too much)
+      maxQty: '52',
       quote: {
         bid: '189.95',
         ask: '190.00',

@@ -125,7 +125,7 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
     ]);
   });
 
-  it('instrument rows: stocks tradable and labelled SIM; crypto display-only (tradable false), asset class CRYPTO, 8 dp step noted', async () => {
+  it('instrument rows: stocks and (since M8) crypto tradable and labelled SIM, asset class CRYPTO, 8 dp step', async () => {
     const aapl = await getAs(h, { token }, '/v1/instruments/AAPL');
     expect(aapl.body).toMatchObject({
       assetClass: 'EQUITY',
@@ -139,12 +139,12 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
       assetClass: 'CRYPTO',
       exchange: 'CRYPTO',
       source: 'SIM',
-      tradable: false,
+      tradable: true,
       tickSize: '0.01',
       currency: 'USD',
     });
     const doge = await getAs(h, { token }, '/v1/instruments/DOGE-USD');
-    expect(doge.body).toMatchObject({ tickSize: '0.00001', tradable: false });
+    expect(doge.body).toMatchObject({ tickSize: '0.00001', tradable: true });
     const rows = await db.migrator.query<{
       symbol: string;
       qty_step: string;
@@ -157,7 +157,7 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
     );
     expect(rows.rows).toHaveLength(6);
     for (const r of rows.rows) {
-      expect(r.tradable_in).toEqual([]);
+      expect(r.tradable_in).toEqual(['MVP']);
       expect(r.fractional_ok).toBe(true);
       expect(r.qty_step).toBe('0.0000000100');
       expect(r.base_asset).toBe(r.symbol.split('-')[0]);
@@ -166,7 +166,7 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
     expect(search.body.results[0]).toMatchObject({
       symbol: 'BTC-USD',
       assetClass: 'CRYPTO',
-      tradable: false,
+      tradable: true,
     });
   });
 
@@ -275,7 +275,7 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
     expect(ex.rows).toEqual([{ quote_source: 'SIM' }]);
   });
 
-  it('crypto cannot be traded yet: INSTRUMENT_NOT_TRADABLE (control: the same user fills a stock order)', async () => {
+  it('crypto is tradable since M8 (1 BTC is more than the 10,000 cash: INSUFFICIENT_BUYING_POWER), and INSTRUMENT_NOT_TRADABLE still protects an instrument without the gate (controls)', async () => {
     const u = await newUser(h, db);
     const [btc] = await quotes(h, u.token, 'BTC-USD');
     const rejected = await placeOrder(h, u, newKey(), {
@@ -288,7 +288,7 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
     expect(rejected.status).toBe(201);
     expect(rejected.body).toMatchObject({
       status: 'REJECTED',
-      rejectCode: 'INSTRUMENT_NOT_TRADABLE',
+      rejectCode: 'INSUFFICIENT_BUYING_POWER',
       filledQty: '0',
     });
     const preview = await h.http
@@ -296,7 +296,30 @@ describe('SIM feed: stocks and crypto, labelled SIM, REAL_TIME, straight from th
       .set('Cookie', cookie(u.token))
       .set('Origin', 'http://localhost:3000')
       .send({ symbol: 'BTC-USD', side: 'BUY', type: 'MARKET', qty: '1', referencePrice: btc?.ask });
-    expect(preview.body).toMatchObject({ wouldFill: false, rejectCode: 'INSTRUMENT_NOT_TRADABLE' });
+    expect(preview.body).toMatchObject({
+      wouldFill: false,
+      rejectCode: 'INSUFFICIENT_BUYING_POWER',
+    });
+    // the gate still protects: without MVP in tradable_in the same kind of order is INSTRUMENT_NOT_TRADABLE
+    await db.migrator.query(`UPDATE instruments SET tradable_in = '{}' WHERE symbol = 'ETH-USD'`);
+    try {
+      const [eth] = await quotes(h, u.token, 'ETH-USD');
+      const gated = await placeOrder(h, u, newKey(), {
+        symbol: 'ETH-USD',
+        side: 'BUY',
+        type: 'MARKET',
+        qty: '0.001',
+        referencePrice: eth?.ask,
+      });
+      expect(gated.body).toMatchObject({
+        status: 'REJECTED',
+        rejectCode: 'INSTRUMENT_NOT_TRADABLE',
+      });
+    } finally {
+      await db.migrator.query(
+        `UPDATE instruments SET tradable_in = '{MVP}' WHERE symbol = 'ETH-USD'`,
+      );
+    }
     const [aapl] = await quotes(h, u.token, 'AAPL');
     const ok = await placeOrder(h, u, newKey(), {
       symbol: 'AAPL',

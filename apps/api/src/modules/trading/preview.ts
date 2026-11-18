@@ -1,6 +1,6 @@
 // Order preview (D-70): the same decision the real order will make, on a plain read of the current state. Pure: no
 // database, no clock. It is ADVISORY: the real order re-decides under its locks, against the quote of that moment.
-import { commission, fillPrice } from '@vantage/engine';
+import { commission, fillPrice, maxQty } from '@vantage/engine';
 import type { RejectCode } from '@vantage/engine';
 import { add, mul, parse, round8, sub } from '@vantage/money';
 import { decideForCommand } from './execute-market-order.js';
@@ -35,6 +35,29 @@ export interface PreviewOutcome {
   readonly wouldFill: boolean;
   readonly rejectCode: RejectCode | null;
   readonly estimate: PreviewEstimate | null;
+}
+
+/**
+ * D-90: the largest quantity the account could order right now (see the engine's maxQty). The engine computes the
+ * candidate with the SAME pricing as the decision; the decision is then asked about it, so a quantity is only offered
+ * when the real rules would fill it (a halted instrument, a stale quote or a paused platform give null).
+ */
+export function previewMaxQty(
+  cmd: MarketOrderCommand,
+  state: DecisionState,
+  maxOrderQty: string,
+): string | null {
+  const q = maxQty({
+    side: cmd.side,
+    instrument: cmd.instrument,
+    quote: cmd.quote === null ? null : { bid: cmd.quote.bid, ask: cmd.quote.ask },
+    schedule: cmd.feeSchedule,
+    cash: state.cash,
+    positionQty: state.positionQty,
+    maxOrderQty,
+  });
+  if (q === null || q === '0') return q;
+  return decideForCommand({ ...cmd, qty: q }, state).decision === 'FILL' ? q : null;
 }
 
 export function previewMarketOrder(cmd: MarketOrderCommand, state: DecisionState): PreviewOutcome {

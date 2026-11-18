@@ -5,8 +5,12 @@ import { z } from 'zod';
 import { MoneyString } from './money-string.js';
 import { FreshnessState, SymbolSchema, changeFields } from './market.js';
 
-/** Largest quantity accepted for one order (shares). Larger values are a validation error, not a reject. */
+/** Largest quantity accepted for one order (shares or crypto units). Larger values are a validation error, not a reject. */
 export const MAX_ORDER_QTY = 1_000_000;
+/** Most decimal places a quantity may have (D-86). The instrument's own step is checked by the engine. */
+export const MAX_QTY_DECIMALS = 8;
+/** A plain positive decimal: no sign, no exponent, no leading zeros, 1 to 7 integer digits, at most 8 decimals. */
+export const QTY_PATTERN = /^(0|[1-9][0-9]{0,9})(\.[0-9]{1,8})?$/;
 /** Largest reference price digits accepted: up to 12 integer digits and 8 decimals. */
 export const REFERENCE_PRICE_PATTERN = /^[0-9]{1,12}(\.[0-9]{1,8})?$/;
 
@@ -56,26 +60,44 @@ export const ORDER_ERROR_CODES = [
   'INTERNAL_ERROR', // 500 (with a request id; nothing is stored)
 ] as const;
 
+/**
+ * A quantity as the client sends it: a decimal STRING with at most 8 decimals (or a JSON integer). It is normalised to
+ * the canonical text (trailing zeros and a bare dot removed: "0.0025000" becomes "0.0025", "10.0" becomes "10"), so the
+ * same quantity always has one spelling (the idempotency hash relies on that). The browser never does arithmetic on it.
+ */
 const qtyInput = z
   .union([z.number(), z.string()])
   .transform((v, ctx) => {
     const text = typeof v === 'number' ? (Number.isSafeInteger(v) ? String(v) : '') : v;
-    if (!/^[1-9][0-9]{0,9}$/.test(text)) {
-      ctx.addIssue({ code: 'custom', message: 'must be a positive whole number' });
+    if (!QTY_PATTERN.test(text)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: `must be a positive decimal number with at most ${String(MAX_QTY_DECIMALS)} decimals`,
+      });
       return z.NEVER;
     }
-    return text;
+    const canonical = text.includes('.') ? text.replace(/0+$/, '').replace(/\.$/, '') : text;
+    if (!/[1-9]/.test(canonical)) {
+      ctx.addIssue({ code: 'custom', message: 'must be greater than zero' });
+      return z.NEVER;
+    }
+    return canonical;
   })
-  .refine((t) => Number(t) <= MAX_ORDER_QTY, {
-    message: `must be at most ${String(MAX_ORDER_QTY)}`,
-  });
+  .refine(
+    (t) => {
+      const [whole = '0', frac = ''] = t.split('.');
+      const n = Number(whole); // at most 10 digits: exact. The fraction is compared as text.
+      return n < MAX_ORDER_QTY || (n === MAX_ORDER_QTY && frac === '');
+    },
+    { message: `must be at most ${String(MAX_ORDER_QTY)}` },
+  );
 
 /** POST /v1/orders body. Unknown fields (an account id, a price, a time, a fee) are rejected. */
 export const PlaceOrderRequest = z.strictObject({
   symbol: SymbolSchema,
   side: OrderSide,
   type: OrderType,
-  /** A positive whole number of shares: a JSON integer or a digit string. Normalised to a digit string. */
+  /** A positive decimal quantity, at most 8 decimals: a digit string (or a JSON integer). Normalised to canonical text. */
   qty: qtyInput,
   /** The price the user saw: the ask for a BUY, the bid for a SELL. A plain decimal string, greater than zero. */
   referencePrice: z
@@ -197,6 +219,17 @@ export const OrderPreviewResponse = z.strictObject({
     .string()
     .regex(/^[0-9]+(\.[0-9]+)?$/)
     .nullable(),
+  /**
+   * D-90: the largest quantity this account could order right now, rounded DOWN to the instrument's step, decided by the
+   * server with the same engine code as the order (BUY: what the cash pays for at the estimated price and fee; SELL: the
+   * position). "0" when not even the minimum fits; null when it cannot be known (no usable quote, not tradable, paused).
+   * The browser only fills this string into the form; it never computes it.
+   */
+  maxQty: z
+    .string()
+    .regex(/^[0-9]+(\.[0-9]+)?$/)
+    .nullable()
+    .optional(),
   quote: OrderPreviewQuote,
   disclaimer: z.literal(ORDER_PREVIEW_DISCLAIMER),
   /** Server time of this preview. */

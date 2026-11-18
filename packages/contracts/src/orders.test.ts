@@ -34,11 +34,41 @@ describe('PlaceOrderRequest', () => {
     );
   });
 
+  it('qty (M8): a decimal with at most 8 decimals is accepted and normalised to one canonical spelling', () => {
+    const q = (qty: unknown) => PlaceOrderRequest.parse({ ...valid, qty }).qty;
+    expect(q('0.0025')).toBe('0.0025');
+    expect(q('0.00250000')).toBe('0.0025'); // trailing zeros removed
+    expect(q('10.0')).toBe('10'); // and a bare dot
+    expect(q('1.50')).toBe('1.5');
+    expect(q('0.00000001')).toBe('0.00000001'); // the smallest step
+    expect(q('999999.99999999')).toBe('999999.99999999');
+    expect(q('1000000.00')).toBe('1000000'); // the maximum, spelled with zeros
+  });
+
+  it.each([
+    ['nine decimals', '0.000000001'],
+    ['exponent', '1.5e-3'],
+    ['exponent upper case', '1E3'],
+    ['leading dot', '.5'],
+    ['trailing dot', '5.'],
+    ['leading zeros', '00.5'],
+    ['sign', '-0.5'],
+    ['plus', '+0.5'],
+    ['comma', '0,5'],
+    ['zero with decimals', '0.00000000'],
+    ['zero', '0.0'],
+    ['one step over the maximum', '1000000.00000001'],
+    ['two dots', '1.2.3'],
+    ['thousands separator', '1_000'],
+    ['text', 'abc'],
+    ['whitespace', '0.5 '],
+  ])('qty (M8) rejects %s', (_name, qty) => {
+    expect(fails({ qty })).toBe(true);
+  });
+
   it.each([
     ['float 10.5', 10.5],
     ['float 1.0e-7', 1e-7],
-    ['string 10.5', '10.5'],
-    ['string 10.0', '10.0'],
     ['zero', 0],
     ['zero string', '0'],
     ['negative', -1],

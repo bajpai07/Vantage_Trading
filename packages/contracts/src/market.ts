@@ -30,6 +30,12 @@ export const InstrumentItem = z.strictObject({
   currency: z.string().length(3),
   status: InstrumentStatus,
   tickSize: MoneyString,
+  /**
+   * The size an order quantity must be a multiple of, and the smallest quantity (M8): plain decimal strings, "1" for stocks
+   * and ETFs, "0.00000001" for crypto. The ticket shows them; the server checks them.
+   */
+  qtyStep: z.string().regex(/^[0-9]+(\.[0-9]+)?$/),
+  minQty: z.string().regex(/^[0-9]+(\.[0-9]+)?$/),
   /** What the active data feed entitles us to show for this instrument. */
   entitlement: Entitlement,
   delaySeconds: z.number().int().min(0),

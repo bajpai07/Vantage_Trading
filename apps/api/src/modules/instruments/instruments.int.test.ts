@@ -184,6 +184,8 @@ describe('2. search', () => {
       currency: 'USD',
       status: 'ACTIVE',
       tickSize: '0.01',
+      qtyStep: '1', // M8: the step and the minimum quantity are part of the instrument
+      minQty: '1',
       entitlement: 'DELAYED',
       delaySeconds: 900,
       source: 'FIXTURE',

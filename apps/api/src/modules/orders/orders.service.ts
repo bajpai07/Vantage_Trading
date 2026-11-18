@@ -3,6 +3,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import type pg from 'pg';
 import type { Config } from '@vantage/config';
 import {
+  MAX_ORDER_QTY,
   ORDERS_PAGE,
   ORDER_PREVIEW_DISCLAIMER,
   OrderPreviewResponse,
@@ -30,7 +31,7 @@ import {
   DuplicateClientOrderIdError,
   executeMarketOrder,
 } from '../trading/index.js';
-import { previewMarketOrder } from '../trading/preview.js';
+import { previewMarketOrder, previewMaxQty } from '../trading/preview.js';
 import type {
   DecisionState,
   ExecuteHooks,
@@ -359,6 +360,7 @@ export class OrdersService {
         out.estimate === undefined || out.estimate === null
           ? null
           : parse(out.estimate.slippageBps).toString(),
+      maxQty: previewMaxQty(cmd, state, String(MAX_ORDER_QTY)),
       quote: {
         bid: q === null ? null : money(q.bid),
         ask: q === null ? null : money(q.ask),

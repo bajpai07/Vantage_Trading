@@ -65,13 +65,13 @@ export class SimProvider implements MarketDataProvider {
           exchange: i.exchange,
           quoteCurrency: 'USD',
           tickSize: tickString(i.tickDp),
-          // stocks trade in whole shares (D-33); crypto is display-only until M8 (8 decimal places noted for it)
+          // stocks trade in whole shares (D-33); crypto trades in steps of 0.00000001 (M8, D-86)
           qtyStep: crypto ? SIM_CRYPTO_QTY_STEP : '1',
           minQty: crypto ? SIM_CRYPTO_QTY_STEP : '1',
           fractionalOk: crypto,
           status: 'ACTIVE',
           providerSymbol: i.symbol,
-          tradableIn: crypto ? [] : ['MVP'],
+          tradableIn: ['MVP'], // stocks since M4b, crypto since M8 (D-89)
           ...(i.baseAsset === undefined ? {} : { baseAsset: i.baseAsset }),
           attrs: SIM_INSTRUMENT_ATTRS,
         };

@@ -211,3 +211,90 @@ export async function accountState(db: TestDatabase, accountId: string): Promise
     ),
   };
 }
+
+// ---- crypto (M8) ---------------------------------------------------------------------------------------------------
+
+/** The crypto fee schedule of migration 0027 (D-88): 10 bps commission, 5 bps base slippage, QBX-1/r8he. */
+export const SCHEDULE_CRYPTO: FeeScheduleSnapshot = {
+  commissionBps: '10',
+  commissionMinLocal: '0',
+  slippageBaseBps: '5',
+  slippageSizeCoef: '0',
+  modelVersion: 'QBX-1/r8he',
+};
+
+/** The id of a seeded crypto instrument (migration 0024), e.g. BTC-USD. */
+export async function seededCrypto(db: TestDatabase, symbol: string): Promise<TestInstrument> {
+  const r = await db.migrator.query<{ id: string }>(
+    `SELECT id FROM instruments WHERE symbol = $1`,
+    [symbol],
+  );
+  const id = r.rows[0]?.id;
+  if (id === undefined) throw new Error(`${symbol} is not seeded`);
+  return { id, symbol };
+}
+
+/** A made-up fractional instrument on the CRYPTO exchange (any tick and step), tradable in the MVP. */
+export async function createFractionalInstrument(
+  db: TestDatabase,
+  symbol: string,
+  o: { tick: string; step: string; min?: string },
+): Promise<TestInstrument> {
+  const id = newId();
+  const exch = await db.migrator.query<{ id: string }>(
+    `SELECT id FROM exchanges WHERE code = 'CRYPTO'`,
+  );
+  await db.migrator.query(
+    `INSERT INTO instruments (id, symbol, name, asset_class, exchange_id, quote_currency, base_asset, tick_size, qty_step,
+                              min_qty, fractional_ok, tradable_in, attrs)
+     VALUES ($1::uuid, $2, $3, 'CRYPTO', $4::uuid, 'USD', $5, $6::numeric, $7::numeric, $8::numeric, true, '{MVP}',
+             '{"source":"SYNTHETIC"}')`,
+    [
+      id,
+      symbol,
+      `${symbol} test coin`,
+      exch.rows[0]?.id,
+      symbol.slice(0, 4),
+      o.tick,
+      o.step,
+      o.min ?? o.step,
+    ],
+  );
+  return { id, symbol };
+}
+
+/**
+ * A crypto command: BTC-USD-like quote bid 89,990.00 / ask 90,010.00 from the simulated feed (REAL_TIME), the crypto fee
+ * schedule, tick 0.01, step and minimum 0.00000001. Everything can be overridden.
+ */
+export function cryptoCommand(
+  accountId: string,
+  inst: TestInstrument,
+  o: CommandOverrides = {},
+): MarketOrderCommand {
+  const now = o.now ?? NOW;
+  const bid = o.bid ?? '89990.00';
+  const ask = o.ask ?? '90010.00';
+  return command(accountId, inst, {
+    freshness: 'REAL_TIME',
+    feeSchedule: SCHEDULE_CRYPTO,
+    ...o,
+    bid,
+    ask,
+    quote: o.quote ?? {
+      bid,
+      ask,
+      providerTs: new Date(now.getTime() - 1000),
+      source: 'SIM',
+      entitlement: 'REAL_TIME',
+      delaySeconds: 0,
+    },
+    instrument: {
+      tickSize: '0.01',
+      minQty: '0.00000001',
+      qtyStep: '0.00000001',
+      assetClass: 'CRYPTO',
+      ...o.instrument,
+    },
+  });
+}
