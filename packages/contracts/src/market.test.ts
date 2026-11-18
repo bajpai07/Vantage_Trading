@@ -98,6 +98,8 @@ describe('queries and requests', () => {
         currency: 'USD',
         status: 'ACTIVE',
         tickSize: '0.01',
+        qtyStep: '1', // M8: the instrument carries its quantity step and minimum
+        minQty: '1',
         entitlement: 'DELAYED',
         delaySeconds: 900,
         source: 'FIXTURE',

@@ -352,8 +352,10 @@ describe('maxQty (D-90)', () => {
 // ---- independent model: integers of 1e-8 ----------------------------------------------------------------------------
 const SCALE = 100_000_000n;
 const unitsOf = (s: string): bigint => {
-  const [i = '0', f = ''] = s.split('.');
-  return BigInt(i) * SCALE + BigInt(f.padEnd(8, '0').slice(0, 8));
+  const negative = s.startsWith('-');
+  const [i = '0', f = ''] = (negative ? s.slice(1) : s).split('.');
+  const units = BigInt(i) * SCALE + BigInt(f.padEnd(8, '0').slice(0, 8));
+  return negative ? -units : units;
 };
 const textOf = (u: bigint): string => {
   const whole = u / SCALE;

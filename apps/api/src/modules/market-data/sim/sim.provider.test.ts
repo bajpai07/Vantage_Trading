@@ -27,7 +27,7 @@ describe('SimProvider (the MarketDataProvider for the simulated feed)', () => {
     expect(make({ crypto: false }).capabilities().assetClasses).toEqual(['EQUITY', 'ETF']);
   });
 
-  it('master: 12 stocks tradable in the MVP (whole shares); crypto display-only (no gate), fractional step of 8 dp, base asset set', async () => {
+  it('master: 12 stocks tradable in the MVP (whole shares); crypto tradable since M8 (MVP gate), fractional step of 8 dp, base asset set', async () => {
     const master = await make().loadInstrumentMaster();
     expect(master).toHaveLength(SIM_STOCKS.length + SIM_CRYPTO.length);
     for (const e of master.filter((m) => m.assetClass !== 'CRYPTO')) {
@@ -44,7 +44,7 @@ describe('SimProvider (the MarketDataProvider for the simulated feed)', () => {
     for (const e of master.filter((m) => m.assetClass === 'CRYPTO')) {
       expect(e).toMatchObject({
         exchange: 'CRYPTO',
-        tradableIn: [],
+        tradableIn: ['MVP'],
         qtyStep: '0.00000001',
         minQty: '0.00000001',
         fractionalOk: true,
