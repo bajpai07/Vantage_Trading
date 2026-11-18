@@ -288,7 +288,8 @@ describe('3. every reject code is previewed exactly as the real order then rejec
   });
 
   it('the codes covered here, with FEE_EXCEEDS_PROCEEDS in the fee file, are every code of the engine and the contract', () => {
-    const covered = [...seen, 'FEE_EXCEEDS_PROCEEDS'].sort();
+    // TICK_VIOLATION (M8b-1) applies to LIMIT orders only: it is covered by the limit-order tests (orders-limit-http)
+    const covered = [...seen, 'FEE_EXCEEDS_PROCEEDS', 'TICK_VIOLATION'].sort();
     expect(covered).toEqual([...ORDER_REJECT_CODES].sort());
     expect([...ORDER_REJECT_CODES]).toEqual([...REJECT_RULE_ORDER]);
   });

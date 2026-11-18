@@ -6,7 +6,7 @@ import { reconcileTrading } from './reconcile-trading.js';
 
 export interface Violation {
   readonly invariant:
-    'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I10' | 'POSITION_COST' | 'REALIZED_PNL';
+    'I1' | 'I2' | 'I3' | 'I4' | 'I5' | 'I6' | 'I7' | 'I10' | 'POSITION_COST' | 'REALIZED_PNL';
   readonly message: string;
 }
 

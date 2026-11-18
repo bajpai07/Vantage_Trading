@@ -404,7 +404,7 @@ export class OrdersService {
         `SELECT a.id, a.status AS account_status, u.status::text AS user_status,
                 (SELECT la.balance FROM ledger_accounts la
                   WHERE la.account_id = a.id AND la.type = 'CASH' AND la.currency = 'USD') AS cash,
-                (SELECT p.qty FROM positions p
+                (SELECT p.qty - p.qty_reserved FROM positions p
                   WHERE p.account_id = a.id AND p.instrument_id = $2::uuid) AS position_qty
            FROM accounts a JOIN users u ON u.id = a.user_id
           WHERE a.user_id = $1::uuid AND a.kind = 'MAIN'`,

@@ -6,11 +6,19 @@ import type { TestDatabase } from '@vantage/test-utils';
 import { newId } from '../ids.js';
 import { createAccount, grantInitialCapital } from '../modules/ledger/repository.js';
 import { executeMarketOrder } from '../modules/trading/execute-market-order.js';
+import {
+  acceptLimitOrder,
+  cancelOrder,
+  expireOrder,
+  fillRestingOrder,
+} from '../modules/trading/limit-orders.js';
+import type { LimitOrderCommand } from '../modules/trading/limit-orders.js';
 import type {
   ExecuteHooks,
   ExecutionResult,
   FeeScheduleSnapshot,
   MarketOrderCommand,
+  QuoteSnapshot,
 } from '../modules/trading/execute-market-order.js';
 
 export const NOW = new Date('2026-11-10T15:00:00.000Z');
@@ -298,3 +306,108 @@ export function cryptoCommand(
     },
   });
 }
+
+// ---- limit orders (M8b-1) ---------------------------------------------------------------------------------------------
+
+export interface LimitOverrides extends CommandOverrides {
+  readonly limitPrice: string;
+  readonly tif?: 'DAY' | 'GTC';
+  readonly expiresAt?: Date;
+}
+
+/** A LIMIT order command on a crypto-like instrument (BTC-USD defaults: bid 89,990.00 / ask 90,010.00, REAL_TIME, crypto schedule). */
+export function limitCommand(
+  accountId: string,
+  inst: TestInstrument,
+  o: LimitOverrides,
+): LimitOrderCommand {
+  const base = cryptoCommand(accountId, inst, o);
+  return {
+    orderId: base.orderId,
+    accountId,
+    clientOrderId: base.clientOrderId,
+    instrument: base.instrument,
+    side: base.side,
+    qty: base.qty,
+    limitPrice: o.limitPrice,
+    tif: o.tif ?? 'GTC',
+    expiresAt: o.expiresAt ?? new Date(base.now.getTime() + 90 * 86_400_000),
+    quote: base.quote,
+    freshness: base.freshness,
+    feeSchedule: base.feeSchedule,
+    allowExecutionOnDelayed: base.allowExecutionOnDelayed,
+    tradingEnabled: base.tradingEnabled,
+    now: base.now,
+  };
+}
+
+/** One transaction: BEGIN, the body, COMMIT (ROLLBACK and rethrow on any error). */
+export async function inTx<T>(pool: pg.Pool, body: (c: pg.PoolClient) => Promise<T>): Promise<T> {
+  const c = await pool.connect();
+  try {
+    await c.query('BEGIN');
+    const r = await body(c);
+    await c.query('COMMIT');
+    return r;
+  } catch (e) {
+    await c.query('ROLLBACK').catch(() => undefined);
+    throw e;
+  } finally {
+    c.release();
+  }
+}
+
+export const accept = (pool: pg.Pool, cmd: LimitOrderCommand, hooks?: ExecuteHooks) =>
+  inTx(pool, (c) => acceptLimitOrder(c, cmd, hooks));
+
+/** The quote of a matcher or fill call: bid and ask from the simulated feed, fresh at `now`. */
+export function freshQuote(bid: string, ask: string, now: Date = NOW): QuoteSnapshot {
+  return {
+    bid,
+    ask,
+    providerTs: new Date(now.getTime() - 1000),
+    source: 'SIM',
+    entitlement: 'REAL_TIME',
+    delaySeconds: 0,
+  };
+}
+
+export const fillResting = (
+  pool: pg.Pool,
+  orderId: string,
+  inst: TestInstrument,
+  quote: QuoteSnapshot,
+  o: {
+    freshness?: 'REAL_TIME' | 'DELAYED' | 'STALE' | 'CLOSED' | 'UNAVAILABLE';
+    now?: Date;
+    tick?: string;
+    feeSchedule?: FeeScheduleSnapshot;
+  } = {},
+  hooks?: ExecuteHooks,
+) =>
+  inTx(pool, (c) =>
+    fillRestingOrder(
+      c,
+      {
+        orderId,
+        instrument: { id: inst.id, symbol: inst.symbol, tickSize: o.tick ?? '0.01' },
+        quote,
+        freshness: o.freshness ?? 'REAL_TIME',
+        allowExecutionOnDelayed: true,
+        feeSchedule: o.feeSchedule ?? SCHEDULE_CRYPTO,
+        now: o.now ?? NOW,
+      },
+      hooks,
+    ),
+  );
+
+export const cancel = (
+  pool: pg.Pool,
+  orderId: string,
+  accountId: string,
+  now: Date = NOW,
+  hooks?: ExecuteHooks,
+) => inTx(pool, (c) => cancelOrder(c, { orderId, accountId, now }, hooks));
+
+export const expire = (pool: pg.Pool, orderId: string, now: Date, hooks?: ExecuteHooks) =>
+  inTx(pool, (c) => expireOrder(c, { orderId, now }, hooks));

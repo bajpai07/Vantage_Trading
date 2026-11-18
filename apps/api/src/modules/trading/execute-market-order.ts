@@ -8,7 +8,6 @@
 // Any unexpected error aborts the whole transaction (the caller rolls back). Nothing is swallowed.
 import type { ClientBase } from 'pg';
 import {
-  allocateProceeds,
   buyFillLegs,
   collarPercentFor,
   consumeLotsFIFO,
@@ -23,9 +22,10 @@ import type {
   RejectCode,
 } from '@vantage/engine';
 import type { Entitlement, FreshnessState, InstrumentStatus } from '@vantage/market-model';
-import { add, div, parse, sign, sub } from '@vantage/money';
+import { add, parse, sign, sub } from '@vantage/money';
 import { newId } from '../../ids.js';
 import { postTransaction } from '../ledger/repository.js';
+import { persistFillEffects } from './fill-effects.js';
 import {
   AccountNotFoundError,
   ClientOrderIdMismatchError,
@@ -232,11 +232,16 @@ export async function executeMarketOrder(
     [cmd.accountId],
   );
   const cash = cashRow.rows[0]?.balance ?? '0';
-  const posRow = await client.query<{ qty: string }>(
-    `SELECT qty FROM positions WHERE account_id = $1::uuid AND instrument_id = $2::uuid FOR UPDATE`,
+  const posRow = await client.query<{ qty: string; qty_reserved: string }>(
+    `SELECT qty, qty_reserved FROM positions WHERE account_id = $1::uuid AND instrument_id = $2::uuid FOR UPDATE`,
     [cmd.accountId, cmd.instrument.id],
   );
-  const positionQty = posRow.rows[0]?.qty ?? '0';
+  const positionTotal = posRow.rows[0]?.qty ?? '0';
+  // D-96 (M8b-1): a SELL, market or limit, may only use the FREE quantity: positions.qty - positions.qty_reserved
+  const positionQty = sub(
+    parse(positionTotal),
+    parse(posRow.rows[0]?.qty_reserved ?? '0'),
+  ).toString();
   const lotRows = await client.query<{
     id: string;
     qty_open: string;
@@ -358,102 +363,28 @@ export async function executeMarketOrder(
       ],
       cmd.now,
     );
-    await client.query(
-      `INSERT INTO executions (id, order_id, account_id, instrument_id, seq, side, qty, price, currency, fee_local,
-                               gross_usd, fee_usd, slippage_bps, quote_bid, quote_ask, quote_last, quote_ts,
-                               quote_source, quote_entitlement, model_version, ledger_tx_id, executed_at)
-       VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, 1, $5::order_side, $6::numeric, $7::numeric, 'USD', $8::numeric,
-               $9::numeric, $8::numeric, $10::numeric, $11::numeric, $12::numeric, $13::numeric, $14,
-               $15, $16::quote_entitlement, $17, $18::uuid, $19)`,
-      [
-        executionId,
-        cmd.orderId,
-        cmd.accountId,
-        cmd.instrument.id,
-        cmd.side,
-        cmd.qty,
-        price,
-        fee,
-        notional,
-        slippageBps,
-        cmd.quote.bid,
-        cmd.quote.ask,
-        cmd.quote.last ?? null,
-        cmd.quote.providerTs,
-        cmd.quote.source,
-        cmd.quote.entitlement,
-        cmd.feeSchedule.modelVersion,
-        posted.transactionId,
-        cmd.now,
-      ],
-    );
-
-    let realisedDelta = '0';
-    let remainingLots: Array<{ qty: string; cost: string }>;
-    if (cmd.side === 'BUY') {
-      await client.query(
-        `INSERT INTO position_lots (id, account_id, instrument_id, open_execution_id, qty_initial, qty_open,
-                                    cost_local_per_unit, cost_usd_per_unit, opened_at, cost_remaining)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $5::numeric, $6::numeric, $6::numeric, $7,
-                 $8::numeric)`,
-        [newId(), cmd.accountId, cmd.instrument.id, executionId, cmd.qty, price, cmd.now, buyCost],
-      );
-      remainingLots = [
-        ...openLots.map((l) => ({ qty: l.qtyOpen, cost: l.costRemaining })),
-        { qty: cmd.qty, cost: buyCost },
-      ];
-    } else {
-      const proceeds = allocateProceeds(notional, consumptions);
-      for (const [i, c] of consumptions.entries()) {
-        await client.query(
-          `UPDATE position_lots SET qty_open = $2::numeric, cost_remaining = $3::numeric, closed_at = $4
-            WHERE id = $1::uuid`,
-          [
-            c.lotId,
-            c.qtyOpenAfter,
-            c.costRemainingAfter,
-            parse(c.qtyOpenAfter).isZero() ? cmd.now : null,
-          ],
-        );
-        const p = proceeds[i] ?? '0';
-        await client.query(
-          `INSERT INTO lot_closures (lot_id, close_execution_id, qty, proceeds_local, cost_local, proceeds_usd,
-                                     cost_usd, trading_pnl_usd, fx_pnl_usd)
-           VALUES ($1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $4::numeric, $5::numeric,
-                   $6::numeric, 0)`,
-          [c.lotId, executionId, c.qty, p, c.cost, sub(parse(p), parse(c.cost)).toString()],
-        );
-      }
-      realisedDelta = sub(parse(notional), parse(basis)).toString();
-      const after = new Map(consumptions.map((c) => [c.lotId, c.qtyOpenAfter]));
-      const costAfter = new Map(consumptions.map((c) => [c.lotId, c.costRemainingAfter]));
-      remainingLots = openLots.map((l) => ({
-        qty: after.get(l.id) ?? l.qtyOpen,
-        cost: costAfter.get(l.id) ?? l.costRemaining,
-      }));
-    }
-
-    const newQty = (
-      cmd.side === 'BUY'
-        ? add(parse(positionQty), parse(cmd.qty))
-        : sub(parse(positionQty), parse(cmd.qty))
-    ).toString();
-    await client.query(
-      `INSERT INTO positions (account_id, instrument_id, qty, avg_cost_local, realized_trading_pnl_usd, updated_at)
-       VALUES ($1::uuid, $2::uuid, $3::numeric, $4::numeric, $5::numeric, $6)
-       ON CONFLICT (account_id, instrument_id) DO UPDATE
-         SET qty = EXCLUDED.qty, avg_cost_local = EXCLUDED.avg_cost_local,
-             realized_trading_pnl_usd = positions.realized_trading_pnl_usd + EXCLUDED.realized_trading_pnl_usd,
-             version = positions.version + 1, updated_at = EXCLUDED.updated_at`,
-      [
-        cmd.accountId,
-        cmd.instrument.id,
-        newQty,
-        averageCost(remainingLots),
-        realisedDelta,
-        cmd.now,
-      ],
-    );
+    await persistFillEffects(client, {
+      orderId: cmd.orderId,
+      accountId: cmd.accountId,
+      instrumentId: cmd.instrument.id,
+      executionId,
+      side: cmd.side,
+      qty: cmd.qty,
+      price,
+      notional,
+      fee,
+      slippageBps,
+      quote: cmd.quote,
+      modelVersion: cmd.feeSchedule.modelVersion,
+      ledgerTxId: posted.transactionId,
+      now: cmd.now,
+      openLots,
+      positionQty: positionTotal,
+      buyCost,
+      consumptions,
+      basis,
+      qtyReservedDelta: '0',
+    });
 
     return {
       outcome: 'FILLED',
@@ -476,17 +407,6 @@ export async function executeMarketOrder(
   } catch (e) {
     throw mapDbError(e);
   }
-}
-
-/** Sum(cost_remaining) / Sum(qty_open) over lots, 8 decimal places HALF_EVEN; 0 when no quantity is left (D-85). */
-function averageCost(lots: ReadonlyArray<{ qty: string; cost: string }>): string {
-  let qty = parse('0');
-  let cost = parse('0');
-  for (const l of lots) {
-    qty = add(qty, parse(l.qty));
-    cost = add(cost, parse(l.cost));
-  }
-  return qty.isZero() ? '0' : div(cost, qty, 8, 'HALF_EVEN').toString();
 }
 
 function orderRecord(
@@ -535,8 +455,8 @@ async function insertOrder(
   );
 }
 
-/** Inserts the order's events in one statement; `seq` is 1, 2, 3 ... in the given order (contiguous). */
-async function insertEvents(
+/** Appends events in one statement; `seq` continues from the highest existing one (1, 2, 3 ... for a new order), contiguous. */
+export async function insertEvents(
   client: Queryable,
   orderId: string,
   events: ReadonlyArray<{ type: string; payload: unknown }>,
@@ -544,7 +464,7 @@ async function insertEvents(
 ): Promise<void> {
   await client.query(
     `INSERT INTO order_events (order_id, seq, type, payload, created_at)
-     SELECT $1::uuid, t.ord::int, t.type, t.payload, $4
+     SELECT $1::uuid, (SELECT COALESCE(MAX(seq), 0) FROM order_events WHERE order_id = $1::uuid) + t.ord::int, t.type, t.payload, $4
        FROM unnest($2::text[], $3::jsonb[]) WITH ORDINALITY AS t(type, payload, ord)
       ORDER BY t.ord`,
     [orderId, events.map((e) => e.type), events.map((e) => JSON.stringify(e.payload)), at],

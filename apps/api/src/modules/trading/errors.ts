@@ -12,3 +12,12 @@ export class ClientOrderIdMismatchError extends TradingError {}
 export class DuplicateClientOrderIdError extends TradingError {}
 
 export class AccountNotFoundError extends TradingError {}
+
+/** The order does not exist (or belongs to another account: the two are indistinguishable on purpose). */
+export class OrderNotFoundError extends TradingError {}
+
+/** A guarded transition updated no row: the order is no longer in the state the caller read (a lost race). */
+export class LostRaceError extends TradingError {}
+
+/** A fill with this idempotency key was already posted for an order that is still open: corruption, never silently ignored. */
+export class FillAlreadyPostedError extends TradingError {}
