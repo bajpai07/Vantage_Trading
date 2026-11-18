@@ -10,13 +10,13 @@ Branch `chore/n1-nextjs-upgrade`. Not pushed.
 
 Source: the build message names `https://registry.npmjs.org/-/npm/v1/security/advisories/bulk`. I queried it for `next@16.4.3` (POST) and read both GitHub advisory pages.
 
-| | GHSA-mfr8-8qww-v76h | GHSA-vc7v-qv4w-wrv8 |
-| --- | --- | --- |
-| CVE | CVE-2026-119790 | CVE-2026-119351 |
-| Severity | moderate (CVSS v4 6.3), CWE-362 | moderate (CVSS v4 6.3), CWE-362 |
-| Affected | >=16.3.0 <=16.4.4 | >=16.2.0 <=16.4.4 |
-| Fixed | 16.4.5 | 16.4.5 |
-| Issue | `'use cache'` function also called via `unstable_cache()` can leak across root-param values during a cold-start race | nested `'use cache'` functions can be cached without a root param key (Cache Components) |
+|          | GHSA-mfr8-8qww-v76h                                                                                                  | GHSA-vc7v-qv4w-wrv8                                                                      |
+| -------- | -------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------- |
+| CVE      | CVE-2026-119790                                                                                                      | CVE-2026-119351                                                                          |
+| Severity | moderate (CVSS v4 6.3), CWE-362                                                                                      | moderate (CVSS v4 6.3), CWE-362                                                          |
+| Affected | >=16.3.0 <=16.4.4                                                                                                    | >=16.2.0 <=16.4.4                                                                        |
+| Fixed    | 16.4.5                                                                                                               | 16.4.5                                                                                   |
+| Issue    | `'use cache'` function also called via `unstable_cache()` can leak across root-param values during a cold-start race | nested `'use cache'` functions can be cached without a root param key (Cache Components) |
 
 **Does it affect this app?** No. A search of `apps/web/src` and `next.config.ts` finds no `use cache`, `unstable_cache`, `root-params`, `cacheComponents` or experimental flags. All routes are dynamic (`ƒ`); there are no server actions or image optimisation. The affected features are not used, so the app was not exploitable. The risk was the build-time advisory stop.
 
@@ -48,43 +48,45 @@ Commits: `525a6d7` (dependency bump) and the docs commit. No forced code fixes w
 
 Read the GitHub release pages for v16.4.4 and v16.4.5 (via a read-only fetch agent). Neither lists breaking changes.
 
-| Area | Finding |
-| --- | --- |
+| Area                                     | Finding                                                                                                                                                                                           |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `proxy.ts` (CSP nonce, route protection) | 16.4.4: "Emit the Turbopack shared-runtime bootstrap in the PPR resume so it gets the CSP nonce". This is the only CSP-related item. The app does not use PPR; the e2e CSP tests pass (section 5) |
-| Route handlers (`api/[...path]`) | nothing listed. e2e allowlist test passes |
-| `instrumentation-client.ts` | nothing listed |
-| `next.config` | nothing listed |
-| Caching defaults | nothing listed; the `use cache` advisories are isolation fixes |
-| Turbopack / build | 16.4.4: reload on missed Turbopack startup CSS updates (dev), and a revert of "Optimize strict module factory chunks". Build output may differ slightly; the build, e2e and tests are green |
-| Other | 16.4.4 swaps `jsonwebtoken` for `fast-jwt` inside Next (not used by this app); an analyzer fix; CI/test-only items |
+| Route handlers (`api/[...path]`)         | nothing listed. e2e allowlist test passes                                                                                                                                                         |
+| `instrumentation-client.ts`              | nothing listed                                                                                                                                                                                    |
+| `next.config`                            | nothing listed                                                                                                                                                                                    |
+| Caching defaults                         | nothing listed; the `use cache` advisories are isolation fixes                                                                                                                                    |
+| Turbopack / build                        | 16.4.4: reload on missed Turbopack startup CSS updates (dev), and a revert of "Optimize strict module factory chunks". Build output may differ slightly; the build, e2e and tests are green       |
+| Other                                    | 16.4.4 swaps `jsonwebtoken` for `fast-jwt` inside Next (not used by this app); an analyzer fix; CI/test-only items                                                                                |
 
 ## 5. Commands and exit codes
 
-| Command | Exit | Result |
-| --- | --- | --- |
-| Baseline before the change: `pnpm install --frozen-lockfile`, `pnpm db:migrate` | 0, 0 | "No migrations to run!" |
-| Baseline `pnpm --filter web build` (16.4.3) | **1** | reproduced `SecurityFatalError` |
-| `pnpm install` after the bump | 0 | |
-| `pnpm --filter web build` run 1 | 0 | no `SecurityFatalError` or "Build error" in the log |
-| run 2 | 0 | same |
-| run 3 | 0 | same |
-| run 4 | 0 | same |
-| run 5 | 0 | same |
-| `pnpm verify` | 0 | format, lint, typecheck, build, unit, 408 integration passed (3 skipped) |
-| `pnpm test:integration` run 1 | 0 | 408 passed, 3 skipped (26 files passed, 2 skipped) |
-| `pnpm test:integration` run 2 | 0 | 408 passed, 3 skipped |
-| `pnpm --filter web test:e2e` | 0 | default profile 80 passed (2.8 min); always-open profile 1 passed |
-| `node --env-file=.env apps/api/dist/main.js --check` | 0 | `{"app":"api","status":"config_ok"}` |
-| the same with an empty environment | 2 | |
-| the same with `--bogus` | 64 | |
-| `pnpm audit --prod` after | 0 | "No known vulnerabilities found" |
-| leftover `t_*` databases | | 0 |
+| Command                                                                         | Exit  | Result                                                                   |
+| ------------------------------------------------------------------------------- | ----- | ------------------------------------------------------------------------ |
+| Baseline before the change: `pnpm install --frozen-lockfile`, `pnpm db:migrate` | 0, 0  | "No migrations to run!"                                                  |
+| Baseline `pnpm --filter web build` (16.4.3)                                     | **1** | reproduced `SecurityFatalError`                                          |
+| `pnpm install` after the bump                                                   | 0     |                                                                          |
+| `pnpm --filter web build` run 1                                                 | 0     | no `SecurityFatalError` or "Build error" in the log                      |
+| run 2                                                                           | 0     | same                                                                     |
+| run 3                                                                           | 0     | same                                                                     |
+| run 4                                                                           | 0     | same                                                                     |
+| run 5                                                                           | 0     | same                                                                     |
+| `pnpm verify`                                                                   | 0     | format, lint, typecheck, build, unit, 408 integration passed (3 skipped) |
+| `pnpm test:integration` run 1                                                   | 0     | 408 passed, 3 skipped (26 files passed, 2 skipped)                       |
+| `pnpm test:integration` run 2                                                   | 0     | 408 passed, 3 skipped                                                    |
+| `pnpm --filter web test:e2e`                                                    | 0     | default profile 80 passed (2.8 min); always-open profile 1 passed        |
+| `node --env-file=.env apps/api/dist/main.js --check`                            | 0     | `{"app":"api","status":"config_ok"}`                                     |
+| the same with an empty environment                                              | 2     |                                                                          |
+| the same with `--bogus`                                                         | 64    |                                                                          |
+| `pnpm audit --prod` after                                                       | 0     | "No known vulnerabilities found"                                         |
+| leftover `t_*` databases                                                        |       | 0                                                                        |
 
 Notes:
+
 - Running `--check` without loading `.env` also gives 2, as in M7b; the config needs the env file.
 - Machine was kept awake; nothing else ran during the builds. The e2e run rewrote the committed screenshots in `docs/phase-reports/`; I restored them with `git checkout` so the commit holds no unrelated binary changes.
 
 **Security behaviour confirmed by the existing e2e suite (`e2e/a11y-security.spec.ts`), which passed:**
+
 - the CSP header has `script-src 'self' 'nonce-…' 'strict-dynamic'`, no `unsafe-inline`, and a fresh nonce per request, with every script carrying a nonce;
 - the session cookie is httpOnly and SameSite=Lax, and nothing is readable from script;
 - `/api/admin`, `/api/v2/me`, `/api/..%2f..%2fetc` and `/api/_next/static` return 404 while `/api/health` returns 200 (control);
