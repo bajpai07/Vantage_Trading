@@ -36,10 +36,73 @@ export function sanitizeQty(raw: string): string {
 
 export const isDigitsOnly = (text: string): boolean => /^\d+$/.test(text);
 
+// ---- decimal quantities (M8, D-86) ---------------------------------------------------------------------------------
+// A quantity is TEXT: digits, at most one dot, at most 8 decimals. Everything below works on the characters; nothing is
+// converted to a number and nothing is calculated (the server decides every rule and the browser only blocks the obvious).
+
+/** Most decimals a quantity may have (the contract's limit). */
+export const MAX_QTY_DECIMALS = 8;
+
+/** How many decimals the instrument's step allows: "1" -> 0, "0.00001" -> 5, "0.00000001" -> 8. */
+export function stepDecimals(step: string | undefined): number {
+  if (step === undefined) return 0;
+  const frac = step.split('.')[1] ?? '';
+  return frac.length < MAX_QTY_DECIMALS ? frac.length : MAX_QTY_DECIMALS;
+}
+
+/**
+ * What a quantity field may hold: digits and one dot, no exponent, no sign, no separators. For an instrument that trades
+ * in fractions the decimals are capped at what its step allows. For a whole-share instrument a typed dot and decimals are
+ * KEPT (never silently turned into a different number): the ticket then blocks the order with the step message.
+ */
+export function sanitizeQtyFor(raw: string, step: string | undefined): string {
+  const dot = raw.indexOf('.');
+  const intPart = (dot === -1 ? raw : raw.slice(0, dot))
+    .replace(/\D/g, '')
+    .replace(/^0+/, '')
+    .slice(0, MAX_QTY_DIGITS);
+  if (dot === -1) return intPart;
+  const allowed = stepDecimals(step);
+  const frac = raw
+    .slice(dot + 1)
+    .replace(/\D/g, '')
+    .slice(0, allowed > 0 ? allowed : MAX_QTY_DECIMALS);
+  return `${intPart === '' ? '0' : intPart}.${frac}`;
+}
+
+/** A complete positive quantity: "5", "0.0025", "10.5" (not "", "0", "0.", "1.", "0.000"). */
+export const qtyComplete = (qty: string): boolean =>
+  /^(?:[1-9]\d*(?:\.\d+)?|0\.\d*[1-9]\d*)$/.test(qty);
+
+/** Compares two plain decimal strings by their digits (-1, 0, 1). No number conversion. */
+export function compareDecimalText(a: string, b: string): -1 | 0 | 1 {
+  const [ai = '', af = ''] = a.split('.');
+  const [bi = '', bf = ''] = b.split('.');
+  const ax = ai.replace(/^0+/, '');
+  const bx = bi.replace(/^0+/, '');
+  if (ax.length !== bx.length) return ax.length < bx.length ? -1 : 1;
+  if (ax !== bx) return ax < bx ? -1 : 1;
+  const w = af.length > bf.length ? af.length : bf.length;
+  const x = af.padEnd(w, '0');
+  const y = bf.padEnd(w, '0');
+  return x === y ? 0 : x < y ? -1 : 1;
+}
+
+/** The step message, or null. Only the obvious case is checked here (more decimals than the step has); the server checks the rest. */
+export function stepMessage(qty: string, step: string | undefined): string | null {
+  if (step === undefined) return null;
+  const decimals = (qty.split('.')[1] ?? '').length;
+  return decimals > stepDecimals(step)
+    ? `This instrument trades in steps of ${formatQty(step)}.`
+    : null;
+}
+
 /** Is this digit string above the maximum order size? (String comparison: no number conversion.) */
 export function qtyTooLarge(qty: string): boolean {
   const max = String(MAX_ORDER_QTY);
-  return qty.length > max.length || (qty.length === max.length && qty > max);
+  const [whole = '', frac = ''] = qty.split('.');
+  if (whole.length !== max.length) return whole.length > max.length;
+  return whole > max || (whole === max && /[1-9]/.test(frac));
 }
 
 export const qtyEmpty = (qty: string): boolean => qty === '' || /^0+$/.test(qty);
@@ -256,8 +319,11 @@ export interface ReasonInput {
   readonly symbol: string;
   readonly side: Side;
   readonly qty: string;
-  /** false when orders cannot be placed for this instrument yet (crypto before M8): prices only. */
+  /** false when orders cannot be placed for this instrument (the MVP gate is missing): prices only. */
   readonly tradable?: boolean;
+  /** The instrument's step and minimum quantity (M8); absent in older callers: only the whole-number rules apply. */
+  readonly qtyStep?: string;
+  readonly minQty?: string;
   readonly status: InstrumentStatus;
   readonly quote: Pick<QuoteItem, 'freshness' | 'bid' | 'ask'>;
   /** The last price refresh failed (the quote on screen may be old). */
@@ -273,7 +339,7 @@ export interface ReasonInput {
  * status, quote state, quantity, position, then the preview's own answer (which carries every API reject code). A
  * disabled button always has one of these reasons next to it.
  */
-/** Shown for instruments that have prices but no trading yet (crypto before M8). */
+/** Shown for instruments that have prices but no trading (no MVP gate in tradable_in). */
 export const NOT_TRADABLE_YET =
   'This instrument is not tradable yet: its prices are shown, but trading it arrives in a later update.';
 
@@ -303,9 +369,16 @@ export function disabledReason(i: ReasonInput): string | null {
   if (i.refreshFailed)
     return "We can't refresh the price right now, so orders are paused until we can.";
 
-  if (qtyEmpty(i.qty)) return 'Enter a quantity.';
-  if (qtyTooLarge(i.qty))
-    return `The most you can order at once is ${formatQty(String(MAX_ORDER_QTY))} shares.`;
+  if (!qtyComplete(i.qty)) return 'Enter a quantity.';
+  if (qtyTooLarge(i.qty)) {
+    const unit = stepDecimals(i.qtyStep) > 0 ? 'units' : 'shares';
+    return `The most you can order at once is ${formatQty(String(MAX_ORDER_QTY))} ${unit}.`;
+  }
+  const step = stepMessage(i.qty, i.qtyStep);
+  if (step !== null) return step;
+  if (i.minQty !== undefined && compareDecimalText(i.qty, i.minQty) < 0) {
+    return `The smallest order for ${i.symbol} is ${formatQty(i.minQty)}.`;
+  }
   // an unknown position (undefined) is not blocked here: the preview then answers INSUFFICIENT_POSITION if it is wrong
   const noShares =
     i.positionQty === null ||

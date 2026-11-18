@@ -15,12 +15,12 @@ import { loginUrlFor } from '../lib/return-to';
 import {
   disabledReason,
   initialTicket,
-  isDigitsOnly,
   isRetryable,
-  qtyEmpty,
+  qtyComplete,
   qtyTooLarge,
   referencePriceFor,
-  sanitizeQty,
+  sanitizeQtyFor,
+  stepDecimals,
   ticketReducer,
 } from '../lib/ticket';
 import type { Side } from '../lib/ticket';
@@ -33,7 +33,8 @@ const BUY_BUTTON =
 const SELL_BUTTON = BUY_BUTTON.replace('bg-up', 'bg-down');
 
 /**
- * The order ticket: MARKET orders, whole shares. Every number shown (estimate, fee, cash after, fill price) is a string
+ * The order ticket: MARKET orders. Quantities are decimal text up to the instrument's step (whole shares for stocks and ETFs,
+ * up to 8 decimals for crypto); the server decides every rule. Every number shown (estimate, fee, cash after, fill price) is a string
  * from the API (the preview and the order response); this component does no money arithmetic. The logic lives in the
  * pure state machine of lib/ticket.ts (idempotency key lifecycle D-72, reference price D-71); this file renders it.
  */
@@ -61,6 +62,8 @@ export function OrderTicket(props: {
     side: t.side,
     qty: t.qty,
     tradable: instrument.tradable,
+    qtyStep: instrument.qtyStep,
+    minQty: instrument.minQty,
     status: instrument.status,
     quote,
     refreshFailed,
@@ -74,6 +77,8 @@ export function OrderTicket(props: {
     side: t.side,
     qty: t.qty,
     tradable: instrument.tradable,
+    qtyStep: instrument.qtyStep,
+    minQty: instrument.minQty,
     status: instrument.status,
     quote,
     refreshFailed: false,
@@ -82,7 +87,57 @@ export function OrderTicket(props: {
     submitting: false,
   });
   const canPreview =
-    preReason === null && refPrice !== null && !qtyEmpty(t.qty) && !qtyTooLarge(t.qty);
+    preReason === null && refPrice !== null && qtyComplete(t.qty) && !qtyTooLarge(t.qty);
+
+  // "Max" (D-90): the server computes the largest quantity (the same engine code as the order); this only fills the string.
+  // The reasons that do not depend on the quantity (not tradable, no usable price, nothing owned to sell) disable it.
+  const maxReason = disabledReason({
+    symbol,
+    side: t.side,
+    qty: instrument.minQty,
+    tradable: instrument.tradable,
+    qtyStep: instrument.qtyStep,
+    minQty: instrument.minQty,
+    status: instrument.status,
+    quote,
+    refreshFailed,
+    positionQty: position === undefined ? undefined : position === null ? null : position.qty,
+    preview: { ...t.preview, status: 'ready', data: null },
+    submitting: t.phase === 'submitting',
+  });
+  const [maxNote, setMaxNote] = useState<string | null>(null);
+  const [maxBusy, setMaxBusy] = useState(false);
+  useEffect(() => {
+    setMaxNote(null);
+  }, [t.side, t.qty]);
+  async function fillMax(): Promise<void> {
+    if (maxReason !== null || refPrice === null || maxBusy) return;
+    setMaxBusy(true);
+    setMaxNote(null);
+    // any valid quantity gets the answer: the maximum does not depend on it
+    const ask = qtyComplete(t.qty) && !qtyTooLarge(t.qty) ? t.qty : instrument.minQty;
+    const r = await clientRequest('POST', '/v1/orders/preview', OrderPreviewResponse, {
+      body: { symbol, side: t.side, type: 'MARKET', qty: ask, referencePrice: refPrice },
+    });
+    setMaxBusy(false);
+    if (!r.ok) {
+      if (r.kind === 'unauthenticated') router.replace(loginUrlFor(pathname));
+      else setMaxNote("We couldn't work out the maximum right now. Please try again.");
+      return;
+    }
+    const m = r.data.maxQty;
+    if (m === null || m === undefined) {
+      setMaxNote('The maximum cannot be worked out right now, so orders are not available.');
+    } else if (!qtyComplete(m)) {
+      setMaxNote(
+        t.side === 'BUY'
+          ? 'Your cash does not cover even the smallest order.'
+          : `You do not own any ${symbol} to sell.`,
+      );
+    } else {
+      dispatch({ type: 'setQty', qty: m });
+    }
+  }
 
   // D-70: the live estimate, debounced, newest answer wins. Price-only changes re-preview too (the estimate stays on
   // screen, marked as updating, until the new one arrives).
@@ -223,27 +278,62 @@ export function OrderTicket(props: {
 
         <div className="mb-3">
           <label htmlFor="ticket-qty" className="mb-1 block text-[12px] text-text-2">
-            Quantity (whole shares)
+            {stepDecimals(instrument.qtyStep) === 0 ? 'Quantity (whole shares)' : 'Quantity'}
           </label>
-          <input
-            id="ticket-qty"
-            name="qty"
-            data-testid="ticket-qty"
-            inputMode="numeric"
-            autoComplete="off"
-            maxLength={7}
-            value={t.qty}
-            aria-describedby="ticket-reason"
-            onBeforeInput={(e) => {
-              const data = (e.nativeEvent as InputEvent).data;
-              if (data !== null && data !== undefined && !isDigitsOnly(data)) e.preventDefault();
-            }}
-            onPaste={(e) => {
-              if (!isDigitsOnly(e.clipboardData.getData('text').trim())) e.preventDefault();
-            }}
-            onChange={(e) => dispatch({ type: 'setQty', qty: sanitizeQty(e.target.value) })}
-            className={`${inputClass} num`}
-          />
+          <div className="flex gap-2">
+            <input
+              id="ticket-qty"
+              name="qty"
+              data-testid="ticket-qty"
+              inputMode="decimal"
+              autoComplete="off"
+              maxLength={16}
+              value={t.qty}
+              aria-describedby="ticket-qty-help ticket-reason"
+              onBeforeInput={(e) => {
+                const data = (e.nativeEvent as InputEvent).data;
+                if (data !== null && data !== undefined && !/^[0-9.]+$/.test(data))
+                  e.preventDefault();
+              }}
+              onPaste={(e) => {
+                if (!/^[0-9]*\.?[0-9]*$/.test(e.clipboardData.getData('text').trim()))
+                  e.preventDefault();
+              }}
+              onChange={(e) =>
+                dispatch({
+                  type: 'setQty',
+                  qty: sanitizeQtyFor(e.target.value, instrument.qtyStep),
+                })
+              }
+              className={`${inputClass} num`}
+            />
+            <button
+              type="button"
+              data-testid="ticket-max"
+              onClick={() => void fillMax()}
+              disabled={maxReason !== null || maxBusy}
+              aria-label={`Max: fill the largest quantity you can ${t.side === 'BUY' ? 'buy' : 'sell'}`}
+              className={secondaryButtonClass}
+            >
+              Max
+            </button>
+          </div>
+          <p
+            id="ticket-qty-help"
+            data-testid="ticket-qty-help"
+            className="mt-1 text-[12px] text-text-2"
+          >
+            {stepDecimals(instrument.qtyStep) === 0
+              ? `Whole shares only · minimum ${formatQty(instrument.minQty)}`
+              : `Steps of ${formatQty(instrument.qtyStep)} · minimum ${formatQty(instrument.minQty)}`}
+          </p>
+          <p
+            role="status"
+            data-testid="ticket-max-note"
+            className="min-h-[0px] text-[12px] text-text-1"
+          >
+            {maxNote}
+          </p>
         </div>
 
         <div
@@ -507,7 +597,11 @@ export function OrderTicket(props: {
               Order not filled
             </h2>
             <p className="mb-2 text-[13px] text-text-0" data-testid="result-reason">
-              {rejectMessage(t.outcome.order.rejectCode)}
+              {rejectMessage(t.outcome.order.rejectCode, {
+                qtyStep: instrument.qtyStep,
+                minQty: instrument.minQty,
+                assetClass: instrument.assetClass,
+              })}
             </p>
             <p className="mb-3 text-[12px] text-text-2">
               Nothing was changed: no money moved and no shares were bought or sold.

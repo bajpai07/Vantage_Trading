@@ -1,4 +1,5 @@
 import type { OrderRejectCode } from '@vantage/contracts';
+import { formatQty } from './money';
 
 /**
  * Plain-language sentences for every business reject code of the contract (13 today). The Record type makes a missing
@@ -26,9 +27,26 @@ export const REJECT_COPY: Readonly<Record<OrderRejectCode, string>> = {
 export const GENERIC_REJECT_COPY =
   'The order was rejected. If this keeps happening, contact support.';
 
-export function rejectMessage(code: string | null | undefined): string {
+/** What the page knows about the instrument: lets a reject say the instrument's own step, minimum or collar. */
+export interface RejectContext {
+  readonly qtyStep?: string;
+  readonly minQty?: string;
+  readonly assetClass?: string;
+}
+
+export function rejectMessage(code: string | null | undefined, context?: RejectContext): string {
   if (code === null || code === undefined) return GENERIC_REJECT_COPY;
-  return Object.hasOwn(REJECT_COPY, code)
-    ? REJECT_COPY[code as OrderRejectCode]
-    : GENERIC_REJECT_COPY;
+  if (!Object.hasOwn(REJECT_COPY, code)) return GENERIC_REJECT_COPY;
+  if (context !== undefined) {
+    if (code === 'QTY_STEP_VIOLATION' && context.qtyStep !== undefined) {
+      return `This instrument trades in steps of ${formatQty(context.qtyStep)}.`;
+    }
+    if (code === 'QTY_BELOW_MIN' && context.minQty !== undefined) {
+      return `The smallest order for this instrument is ${formatQty(context.minQty)}.`;
+    }
+    if (code === 'PRICE_MOVED' && context.assetClass === 'CRYPTO') {
+      return REJECT_COPY.PRICE_MOVED.replace('1%', '2%');
+    }
+  }
+  return REJECT_COPY[code as OrderRejectCode];
 }
