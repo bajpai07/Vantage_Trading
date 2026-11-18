@@ -71,7 +71,12 @@ describe('7a. append-only tables', () => {
   it.each(tables)(
     'the migrator is stopped by the append-only triggers on %s (including TRUNCATE)',
     async (t) => {
-      await expectMessage(db.migrator.query(updateSql[t]), /append-only/);
+      // M8b-1 (D-91): orders are no longer "append-only" for UPDATE (LIMIT orders change state through guarded
+      // transitions); every row of this fixture is terminal, so an update of any column is refused by the guard instead
+      await expectMessage(
+        db.migrator.query(updateSql[t]),
+        t === 'orders' ? /terminal state/ : /append-only/,
+      );
       await expectMessage(db.migrator.query(`DELETE FROM ${t}`), /append-only/);
       await expectMessage(db.migrator.query(`TRUNCATE ${t} CASCADE`), /append-only/);
     },
