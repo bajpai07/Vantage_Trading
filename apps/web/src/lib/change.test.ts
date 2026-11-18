@@ -141,3 +141,23 @@ describe('ChangeCell: sign, glyph and word, never colour alone', () => {
     expect(h).not.toContain('3,364.25');
   });
 });
+
+describe('ChangeCell compact colour (axe contrast on the highlighted search row)', () => {
+  it('compact uses the neutral colour but keeps the arrow and the sign; the full cell keeps the green and red', () => {
+    const h = (compact: boolean): string =>
+      renderToStaticMarkup(
+        createElement(ChangeCell, {
+          change: '-3.61',
+          changePct: '-1.89',
+          changeBasis: 'PREV_SESSION_CLOSE',
+          compact,
+        }),
+      );
+    const compact = h(true);
+    expect(compact).toContain('text-text-0');
+    expect(compact).not.toContain('text-down');
+    expect(compact).toContain('▼');
+    expect(compact).toContain(`${MINUS}1.89%`);
+    expect(h(false)).toContain('text-down');
+  });
+});

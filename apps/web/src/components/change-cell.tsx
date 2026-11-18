@@ -16,9 +16,12 @@ const STYLE = {
 export function ChangeCell(props: ChangeInput & { compact?: boolean; testId?: string }) {
   const v = changeView(props);
   const s = STYLE[v.direction];
+  // compact (search results, shown on the highlighted row) uses the neutral text colour: the sign and the arrow carry the
+  // direction, and the red and green tokens do not have enough contrast on that background (axe)
+  const colour = props.compact === true && v.direction !== 'none' ? 'text-text-0' : s.text;
   return (
     <span
-      className={`num ${s.text}`}
+      className={`num ${colour}`}
       data-testid={props.testId}
       data-direction={v.direction}
       title={v.basisTitle ?? undefined}
