@@ -124,20 +124,21 @@ describe('golden vectors (quote AAPL bid 189.95, ask 190.00, slippage 2 bps)', (
         id: 'lot-2',
         openedAt: new Date('2026-11-10T15:01:00Z'),
         qtyOpen: '2',
-        costPerUnit: '101.03',
+        costRemaining: '202.06', // 2 x 101.03
       },
       {
         id: 'lot-1',
         openedAt: new Date('2026-11-10T15:00:00Z'),
         qtyOpen: '3',
-        costPerUnit: '100.02',
+        costRemaining: '300.06', // 3 x 100.02
       }, // given out of order
     ];
     const used = consumeLotsFIFO(lots, '4');
     // lot 1 fully (3 x 100.02 = 300.06) and 1 share of lot 2 (101.03): basis 401.09
     expect(used).toEqual([
-      { lotId: 'lot-1', qty: '3', cost: '300.06', qtyOpenAfter: '0' },
-      { lotId: 'lot-2', qty: '1', cost: '101.03', qtyOpenAfter: '1' },
+      { lotId: 'lot-1', qty: '3', cost: '300.06', qtyOpenAfter: '0', costRemainingAfter: '0' },
+      // 202.06 x 1 / 2 = 101.03 exactly; the lot keeps 101.03
+      { lotId: 'lot-2', qty: '1', cost: '101.03', qtyOpenAfter: '1', costRemainingAfter: '101.03' },
     ]);
     // proceeds 395.92 split by quantity 3:1 -> 296.94 and 98.98 (the last by subtraction)
     expect(allocateProceeds('395.92', used)).toEqual(['296.94', '98.98']);
@@ -342,29 +343,30 @@ describe('price moved protection (D-51): only adverse moves beyond the collar re
 });
 
 describe('consumeLotsFIFO and allocateProceeds', () => {
+  // `cost` is the TOTAL cost of the remaining quantity (D-85)
   const lot = (id: string, t: string, qty: string, cost: string) => ({
     id,
     openedAt: new Date(t),
     qtyOpen: qty,
-    costPerUnit: cost,
+    costRemaining: cost,
   });
   it('orders by (openedAt, id) and breaks a tie on the id', () => {
     const t = '2026-11-10T15:00:00Z';
-    const used = consumeLotsFIFO([lot('b', t, '2', '10'), lot('a', t, '2', '20')], '3');
+    const used = consumeLotsFIFO([lot('b', t, '2', '20'), lot('a', t, '2', '40')], '3');
     expect(used.map((u) => `${u.lotId}:${u.qty}`)).toEqual(['a:2', 'b:1']);
   });
   it('skips empty lots and throws when the lots hold too little', () => {
     expect(
       consumeLotsFIFO(
-        [lot('x', '2026-11-10T15:00:00Z', '0', '5'), lot('y', '2026-11-10T15:01:00Z', '2', '5')],
+        [lot('x', '2026-11-10T15:00:00Z', '0', '0'), lot('y', '2026-11-10T15:01:00Z', '2', '10')],
         '2',
       ),
     ).toHaveLength(1);
-    expect(() => consumeLotsFIFO([lot('x', '2026-11-10T15:00:00Z', '2', '5')], '3')).toThrow(
+    expect(() => consumeLotsFIFO([lot('x', '2026-11-10T15:00:00Z', '2', '10')], '3')).toThrow(
       EngineInputError,
     );
     expect(() => consumeLotsFIFO([], '1')).toThrow(EngineInputError);
-    expect(() => consumeLotsFIFO([lot('x', '2026-11-10T15:00:00Z', '2', '5')], '0')).toThrow(
+    expect(() => consumeLotsFIFO([lot('x', '2026-11-10T15:00:00Z', '2', '10')], '0')).toThrow(
       EngineInputError,
     );
   });
@@ -460,7 +462,7 @@ describe('properties', () => {
           id: `l${String(i).padStart(2, '0')}`,
           openedAt: new Date(Date.UTC(2026, 10, 10, 15, i)),
           qtyOpen: String(q),
-          costPerUnit: '10.00',
+          costRemaining: String(q * 10), // 10.00 a share
         }));
         if (want > total) {
           expect(() => consumeLotsFIFO(lots, String(want))).toThrow(EngineInputError);

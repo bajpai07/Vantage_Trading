@@ -5,7 +5,9 @@ import {
   add,
   compare,
   div,
+  isZero,
   max,
+  min,
   mul,
   parse,
   round8,
@@ -25,10 +27,13 @@ export type OrderSide = 'BUY' | 'SELL';
  * 3 INSTRUMENT_NOT_TRADABLE not tradable in the MVP, DELISTED, or a BUY on a SELL_ONLY instrument
  * 4 INSTRUMENT_HALTED
  * 5 QTY_BELOW_MIN
- * 6 QTY_STEP_VIOLATION      (whole shares: fractions violate a step of 1)
+ * 6 QTY_STEP_VIOLATION      (the instrument's step: 1 for stocks and ETFs, so a fraction is a violation; 0.00000001 for crypto)
  * 7 quote eligibility       UNAVAILABLE -> NO_ELIGIBLE_QUOTE, CLOSED -> MARKET_CLOSED, STALE -> STALE_QUOTE,
  *                           DELAYED while allowExecutionOnDelayed is false -> NO_ELIGIBLE_QUOTE
  * 8 PRICE_MOVED             the price moved against the user by more than the collar (D-51)
+ * 8b QTY_BELOW_MIN          (M8) a BUY whose cost rounds to 0 at 8 decimal places: the order is too small to price. It sits
+ *                           right after the price check because it needs the fill price; the code is the existing one
+ *                           for "too small", so the code list and its order are unchanged.
  * 9 funds / position        BUY: INSUFFICIENT_BUYING_POWER (cash < notional + fee); SELL: INSUFFICIENT_POSITION
  * 10 FEE_EXCEEDS_PROCEEDS   SELL only, after the position check: the fee is larger than the proceeds (D-57)
  */
@@ -53,6 +58,13 @@ export type RejectCode = (typeof REJECT_RULE_ORDER)[number];
 export const MVP_TRADABLE_GATE = 'MVP';
 /** Collar for equities and ETFs: the largest adverse price move tolerated since the user saw the price (1%). */
 export const EQUITY_COLLAR_PERCENT = '1';
+/** Collar for crypto (TRADING_ENGINE section 6: 2% crypto). */
+export const CRYPTO_COLLAR_PERCENT = '2';
+
+/** The collar (percent) of an asset class; anything that is not CRYPTO uses the equity collar. */
+export function collarPercentFor(assetClass: string | undefined): string {
+  return assetClass === 'CRYPTO' ? CRYPTO_COLLAR_PERCENT : EQUITY_COLLAR_PERCENT;
+}
 
 export interface FeeScheduleInput {
   readonly commissionBps: string;
@@ -64,7 +76,7 @@ export interface FeeScheduleInput {
 
 export interface MarketOrderInput {
   readonly side: OrderSide;
-  /** Whole-share quantity as a decimal string. */
+  /** Quantity as a decimal string (at most 8 decimals); it must be a multiple of the instrument's qty step. */
   readonly qty: string;
   readonly instrument: {
     readonly status: InstrumentStatus;
@@ -138,6 +150,31 @@ export function commission(
   return round8(max(raw, parse(schedule.commissionMinLocal))).toString();
 }
 
+export interface Pricing {
+  readonly price: string;
+  /** round8(qty x price): proceeds for a SELL, cost for a BUY. */
+  readonly notional: string;
+  readonly fee: string;
+  readonly slippageBps: string;
+}
+
+/**
+ * THE one place a quantity becomes a price, a notional and a fee: the order decision, the preview estimate and the
+ * "maximum quantity" search all call it, so none of them can use a different formula.
+ */
+export function priceOrder(
+  side: OrderSide,
+  qty: string,
+  quote: { readonly bid: string; readonly ask: string },
+  schedule: FeeScheduleInput,
+  tickSize: string,
+): Pricing {
+  const slippageBps = schedule.slippageBaseBps; // the size term is 0: no ADV data (D-54)
+  const price = fillPrice(side, quote.bid, quote.ask, slippageBps, tickSize);
+  const notional = round8(mul(parse(qty), parse(price))).toString();
+  return { price, notional, fee: commission(notional, schedule), slippageBps };
+}
+
 const isWhole = (qty: string, step: string): boolean => {
   const s = parse(step);
   return div(parse(qty), s, 0, 'FLOOR').mul(s).equals(parse(qty));
@@ -202,10 +239,15 @@ export function decideMarketOrder(input: MarketOrderInput): MarketOrderDecision 
 
   if (priceMoved(input, bid, ask)) return reject('PRICE_MOVED');
 
-  const slippageBps = input.schedule.slippageBaseBps; // the size term is 0: no ADV data (D-54)
-  const price = fillPrice(input.side, bid, ask, slippageBps, input.instrument.tickSize);
-  const notional = round8(mul(qty, parse(price))).toString();
-  const fee = commission(notional, input.schedule);
+  const { price, notional, fee, slippageBps } = priceOrder(
+    input.side,
+    input.qty,
+    { bid, ask },
+    input.schedule,
+    input.instrument.tickSize,
+  );
+  // M8: a BUY that costs nothing at 8 decimals (a few smallest units of a cheap coin) cannot become a lot with a cost
+  if (input.side === 'BUY' && isZero(parse(notional))) return reject('QTY_BELOW_MIN');
 
   if (input.side === 'BUY') {
     if (compare(parse(input.cash), add(parse(notional), parse(fee))) < 0) {
@@ -217,4 +259,66 @@ export function decideMarketOrder(input: MarketOrderInput): MarketOrderDecision 
     if (compare(parse(fee), parse(notional)) > 0) return reject('FEE_EXCEEDS_PROCEEDS');
   }
   return { decision: 'FILL', price, notional, fee, slippageBps };
+}
+
+export interface MaxQtyInput {
+  readonly side: OrderSide;
+  readonly instrument: {
+    readonly tickSize: string;
+    readonly minQty: string;
+    readonly qtyStep: string;
+  };
+  /** BUY needs the quote; SELL does not. */
+  readonly quote: { readonly bid: string; readonly ask: string } | null;
+  readonly schedule: FeeScheduleInput;
+  readonly cash: string;
+  readonly positionQty: string;
+  /** The largest quantity one order may have (a validation limit of the API, not a reject). */
+  readonly maxOrderQty: string;
+}
+
+/**
+ * D-89: the largest quantity, rounded DOWN to the instrument's step, that an order could be filled with right now.
+ *  - SELL: the position quantity (capped at maxOrderQty).
+ *  - BUY: the largest q with cash >= notional(q) + fee(q), found by an exact binary search over multiples of the step on
+ *    top of `priceOrder` (the same pricing as the decision; notional and fee never decrease with q, so the search is valid).
+ * Returns "0" when nothing at or above the minimum quantity fits, and null when a BUY has no quote to price with.
+ * It does not look at the market state (halted, closed, stale): the decision does, and rejects first.
+ */
+export function maxQty(input: MaxQtyInput): string | null {
+  const step = parse(input.instrument.qtyStep);
+  const minQty = parse(input.instrument.minQty);
+  const cap = min(
+    parse(input.maxOrderQty),
+    parse(input.side === 'SELL' ? input.positionQty : input.maxOrderQty),
+  );
+  const stepsOf = (q: ReturnType<typeof parse>): ReturnType<typeof parse> =>
+    div(q, step, 0, 'FLOOR');
+  let hi = stepsOf(cap); // the most steps allowed by the cap
+  if (input.side === 'BUY') {
+    if (input.quote === null) return null;
+    const quote = input.quote;
+    const cash = parse(input.cash);
+    const fits = (n: ReturnType<typeof parse>): boolean => {
+      const p = priceOrder(
+        'BUY',
+        mul(n, step).toString(),
+        quote,
+        input.schedule,
+        input.instrument.tickSize,
+      );
+      return compare(cash, add(parse(p.notional), parse(p.fee))) >= 0;
+    };
+    // binary search the largest n in [0, hi] that fits (n = 0 always fits)
+    let lo = parse('0');
+    while (compare(lo, hi) < 0) {
+      const mid = div(add(add(lo, hi), parse('1')), parse('2'), 0, 'FLOOR');
+      if (fits(mid)) lo = mid;
+      else hi = sub(mid, parse('1'));
+    }
+    hi = lo;
+  }
+  const q = mul(hi, step);
+  if (sign(q) <= 0 || compare(q, minQty) < 0) return '0';
+  return q.toString();
 }
