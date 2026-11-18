@@ -402,8 +402,8 @@ describe('disabledReason: every state that blocks an order says why', () => {
     );
   });
 
-  it('all 13 reject codes: a previewed reject disables the button with that code’s own sentence', () => {
-    expect(ORDER_REJECT_CODES).toHaveLength(13);
+  it('all 14 reject codes: a previewed reject disables the button with that code’s own sentence', () => {
+    expect(ORDER_REJECT_CODES).toHaveLength(14);
     for (const code of ORDER_REJECT_CODES) {
       const r = disabledReason(
         base({

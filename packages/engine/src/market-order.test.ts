@@ -182,6 +182,7 @@ describe('rule order: the first failure wins', () => {
       'INSTRUMENT_HALTED',
       'QTY_BELOW_MIN',
       'QTY_STEP_VIOLATION',
+      'TICK_VIOLATION', // M8b-1: LIMIT orders only; a MARKET order has no limit price, so it never reaches this rule
       'NO_ELIGIBLE_QUOTE',
       'MARKET_CLOSED',
       'STALE_QUOTE',

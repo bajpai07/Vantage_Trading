@@ -253,7 +253,7 @@ describe('responses and code lists', () => {
   it('the code lists are stable and unique', () => {
     expect(new Set(ORDER_REJECT_CODES).size).toBe(ORDER_REJECT_CODES.length);
     expect(ORDER_REJECT_CODES).toContain('FEE_EXCEEDS_PROCEEDS');
-    expect(ORDER_REJECT_CODES).toHaveLength(13);
+    expect(ORDER_REJECT_CODES).toHaveLength(14);
     expect(new Set(ORDER_ERROR_CODES).size).toBe(ORDER_ERROR_CODES.length);
     expect(ORDER_ERROR_CODES).toContain('IDEMPOTENCY_MISMATCH');
   });

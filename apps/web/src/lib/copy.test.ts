@@ -6,7 +6,7 @@ import { GENERIC_REJECT_COPY, REJECT_COPY, rejectMessage } from './reject-copy';
 describe('reject-code copy is exhaustive against the contract', () => {
   it('has exactly one sentence for each of the contract codes, no more and no fewer', () => {
     expect(Object.keys(REJECT_COPY).sort()).toEqual([...ORDER_REJECT_CODES].sort());
-    expect(ORDER_REJECT_CODES.length).toBe(13);
+    expect(ORDER_REJECT_CODES.length).toBe(14);
   });
 
   it.each([...ORDER_REJECT_CODES])(

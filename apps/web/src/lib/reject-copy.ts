@@ -13,6 +13,7 @@ export const REJECT_COPY: Readonly<Record<OrderRejectCode, string>> = {
   INSTRUMENT_HALTED: 'Trading in this instrument is halted.',
   QTY_BELOW_MIN: 'The quantity is below the minimum allowed for this instrument.',
   QTY_STEP_VIOLATION: 'The quantity is not a multiple of the size this instrument trades in.',
+  TICK_VIOLATION: 'The limit price is not a multiple of the price step this instrument trades in.',
   NO_ELIGIBLE_QUOTE: 'There was no usable price for this instrument, so the order was not filled.',
   MARKET_CLOSED: 'The market was closed, so the order was not filled.',
   STALE_QUOTE: 'The latest price was too old to trade against, so the order was not filled.',

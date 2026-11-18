@@ -141,7 +141,74 @@ export function sellFillLegs(input: SellFillInput): Leg[] {
   return legs;
 }
 
+export interface ReserveInput {
+  /** The amount to hold back (a limit BUY's reserve R, or what a cancel or expiry gives back). */
+  readonly amount: string;
+  readonly currency?: string;
+}
+
+/** ORDER_RESERVE (TRADING_ENGINE 5.1): a limit BUY is accepted. CASH -R, RESERVED +R. */
+export function reserveLegs(input: ReserveInput): Leg[] {
+  checkCurrency(input.currency);
+  const r = round8(amountOf('amount', input.amount, 'positive'));
+  const legs = finish([
+    ['CASH', negate(r)],
+    ['RESERVED', r],
+  ]);
+  assertBalanced(legs);
+  return legs;
+}
+
+/** ORDER_RELEASE (TRADING_ENGINE 5.1): cancel or expiry. RESERVED -R, CASH +R, with R the STORED reserved amount. */
+export function releaseLegs(input: ReserveInput): Leg[] {
+  checkCurrency(input.currency);
+  const r = round8(amountOf('amount', input.amount, 'positive'));
+  const legs = finish([
+    ['RESERVED', negate(r)],
+    ['CASH', r],
+  ]);
+  assertBalanced(legs);
+  return legs;
+}
+
+export interface BuyFillFromReserveInput {
+  readonly qty: string;
+  readonly price: string;
+  readonly fee: string;
+  /** The reserved amount R of the order (the stored reserved_usd). */
+  readonly reserved: string;
+  readonly currency?: string;
+}
+
+/**
+ * FILL of a BUY that holds a reservation (TRADING_ENGINE 5.1): C = round8(qty x price), f = round8(fee), R the reserved amount.
+ * RESERVED -R, POSITION_COST +C, FEES +f, CASH +(R - C - f). It requires C + f <= R: a fill may never spend more than was
+ * reserved (the reserve of a limit BUY is built so this always holds, D-92; if it ever did not, the fill is refused with an
+ * EngineInvariantError and the order is left intact). A zero CASH leg (C + f = R exactly) is omitted.
+ */
+export function buyFillFromReserveLegs(input: BuyFillFromReserveInput): Leg[] {
+  checkCurrency(input.currency);
+  const qty = amountOf('qty', input.qty, 'positive');
+  const price = amountOf('price', input.price, 'positive');
+  const f = round8(amountOf('fee', input.fee, 'non-negative'));
+  const r = round8(amountOf('reserved', input.reserved, 'positive'));
+  const c = round8(mul(qty, price));
+  const back = sub(r, add(c, f));
+  if (sign(back) < 0) {
+    throw new EngineInvariantError('the fill would cost more than the reservation (C + f > R)');
+  }
+  const legs = finish([
+    ['RESERVED', negate(r)],
+    ['POSITION_COST', c],
+    ['FEES', f],
+    ['CASH', back],
+  ]);
+  assertBalanced(legs);
+  return legs;
+}
+
 export * from './errors.js';
 export * from './lots.js';
+export * from './limit-order.js';
 export * from './market-order.js';
 export * from './valuation.js';

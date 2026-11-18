@@ -28,6 +28,8 @@ export type OrderSide = 'BUY' | 'SELL';
  * 4 INSTRUMENT_HALTED
  * 5 QTY_BELOW_MIN
  * 6 QTY_STEP_VIOLATION      (the instrument's step: 1 for stocks and ETFs, so a fraction is a violation; 0.00000001 for crypto)
+ * 6b TICK_VIOLATION         (M8b-1, LIMIT orders only) the limit price is not a multiple of the instrument's tick. MARKET orders
+ *                           have no limit price, so this rule never applies to them; it sits where TRADING_ENGINE section 7 lists it.
  * 7 quote eligibility       UNAVAILABLE -> NO_ELIGIBLE_QUOTE, CLOSED -> MARKET_CLOSED, STALE -> STALE_QUOTE,
  *                           DELAYED while allowExecutionOnDelayed is false -> NO_ELIGIBLE_QUOTE
  * 8 PRICE_MOVED             the price moved against the user by more than the collar (D-51)
@@ -44,6 +46,7 @@ export const REJECT_RULE_ORDER = [
   'INSTRUMENT_HALTED',
   'QTY_BELOW_MIN',
   'QTY_STEP_VIOLATION',
+  'TICK_VIOLATION',
   'NO_ELIGIBLE_QUOTE',
   'MARKET_CLOSED',
   'STALE_QUOTE',
@@ -168,11 +171,43 @@ export function priceOrder(
   quote: { readonly bid: string; readonly ask: string },
   schedule: FeeScheduleInput,
   tickSize: string,
+  /**
+   * M8b-1 (D-95): a LIMIT order is never filled at a price worse than its limit: a BUY pays min(limit, the slippage-adjusted
+   * ask), a SELL receives max(limit, the slippage-adjusted bid). The slippage-adjusted value is the same one a market order
+   * gets (BUY rounded up, SELL rounded down to the tick); the limit is a tick multiple, so the result is too.
+   */
+  limit?: string,
 ): Pricing {
-  const slippageBps = schedule.slippageBaseBps; // the size term is 0: no ADV data (D-54)
-  const price = fillPrice(side, quote.bid, quote.ask, slippageBps, tickSize);
+  const slipped = fillPrice(side, quote.bid, quote.ask, schedule.slippageBaseBps, tickSize);
+  return priceFromSlipped(side, qty, slipped, schedule, limit);
+}
+
+/**
+ * The second half of `priceOrder`: from the slippage-adjusted price (which depends only on the side, the quote and the
+ * schedule, not on the quantity) to the fill price, the notional and the fee. `priceOrder` is this function applied to
+ * `fillPrice`; a caller that prices thousands of orders against ONE quote computes the slipped price once per side and
+ * calls this, with the same result as calling `priceOrder` for each (a test proves it).
+ */
+export function priceFromSlipped(
+  side: OrderSide,
+  qty: string,
+  slipped: string,
+  schedule: FeeScheduleInput,
+  limit?: string,
+): Pricing {
+  const price =
+    limit === undefined
+      ? slipped
+      : side === 'BUY'
+        ? min(parse(slipped), parse(limit)).toString()
+        : max(parse(slipped), parse(limit)).toString();
   const notional = round8(mul(parse(qty), parse(price))).toString();
-  return { price, notional, fee: commission(notional, schedule), slippageBps };
+  return {
+    price,
+    notional,
+    fee: commission(notional, schedule),
+    slippageBps: schedule.slippageBaseBps, // the size term is 0: no ADV data (D-54)
+  };
 }
 
 const isWhole = (qty: string, step: string): boolean => {
