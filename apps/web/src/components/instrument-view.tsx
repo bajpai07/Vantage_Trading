@@ -9,7 +9,7 @@ import type {
   QuoteItem,
 } from '@vantage/contracts';
 import { formatUtcShort } from '../lib/format';
-import { formatMoney, formatPrice, formatQty } from '../lib/money';
+import { formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
 import { useQuotePoll } from '../lib/use-quote-poll';
@@ -64,6 +64,14 @@ function PositionPanel({
           <dd className="text-right text-text-0" data-testid="position-qty">
             {formatQty(position.qty)}
           </dd>
+          {isZeroDecimal(position.qtyReserved) ? null : (
+            <>
+              <dt className="text-text-2">Reserved for open orders</dt>
+              <dd className="text-right text-text-0" data-testid="position-reserved">
+                {formatQty(position.qtyReserved)}
+              </dd>
+            </>
+          )}
           <dt className="text-text-2">Average cost</dt>
           <dd className="text-right text-text-0" data-testid="position-avg-cost">
             {formatPrice(position.avgCost)}

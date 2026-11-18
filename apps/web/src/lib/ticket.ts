@@ -15,7 +15,7 @@
 import { MAX_ORDER_QTY } from '@vantage/contracts';
 import type { OrderPreviewResponse, OrderResponse, QuoteItem } from '@vantage/contracts';
 import type { ApiFailure } from './api-core';
-import { formatQty } from './money';
+import { formatPrice, formatQty } from './money';
 import { statusView } from './market';
 import type { InstrumentStatus } from './market';
 import { rejectMessage } from './reject-copy';
@@ -35,6 +35,73 @@ export function sanitizeQty(raw: string): string {
 }
 
 export const isDigitsOnly = (text: string): boolean => /^\d+$/.test(text);
+
+// ---- order type, limit price and time in force (M8b-1) ----------------------------------------------------------------
+
+export type OrderKind = 'MARKET' | 'LIMIT';
+
+/**
+ * The body of POST /v1/orders and of the preview, from the form: a MARKET order carries the price the user saw, a LIMIT order
+ * carries its limit price and time in force (and no reference price). One function, so the preview and the order cannot differ.
+ */
+export function orderRequestBody(i: {
+  readonly symbol: string;
+  readonly side: 'BUY' | 'SELL';
+  readonly kind: OrderKind;
+  readonly qty: string;
+  readonly referencePrice: string;
+  readonly limitPrice: string;
+  readonly tif: 'DAY' | 'GTC';
+}): Record<string, string> {
+  return i.kind === 'LIMIT'
+    ? {
+        symbol: i.symbol,
+        side: i.side,
+        type: 'LIMIT',
+        qty: i.qty,
+        limitPrice: i.limitPrice,
+        tif: i.tif,
+      }
+    : {
+        symbol: i.symbol,
+        side: i.side,
+        type: 'MARKET',
+        qty: i.qty,
+        referencePrice: i.referencePrice,
+      };
+}
+export type Tif = 'DAY' | 'GTC';
+
+/** Most integer digits of a limit price (the contract allows 12) and decimals (8). */
+export const MAX_LIMIT_INT_DIGITS = 12;
+
+/**
+ * What a limit price field may hold: digits and one dot, at most 12 integer digits and 8 decimals, no sign, no exponent. Text in,
+ * text out: nothing is converted to a number. Whether the price is a multiple of the tick is checked by tickMessage (the obvious
+ * case) and by the server.
+ */
+export function sanitizeLimitPrice(raw: string): string {
+  const dot = raw.indexOf('.');
+  const intPart = (dot === -1 ? raw : raw.slice(0, dot))
+    .replace(/\D/g, '')
+    .replace(/^0+/, '')
+    .slice(0, MAX_LIMIT_INT_DIGITS);
+  if (dot === -1) return intPart;
+  const frac = raw
+    .slice(dot + 1)
+    .replace(/\D/g, '')
+    .slice(0, MAX_QTY_DECIMALS);
+  return `${intPart === '' ? '0' : intPart}.${frac}`;
+}
+
+/** The tick message, or null: a limit price with more decimals than the tick has cannot be a multiple of it. */
+export function tickMessage(limitPrice: string, tickSize: string | undefined): string | null {
+  if (tickSize === undefined) return null;
+  const decimals = (limitPrice.split('.')[1] ?? '').length;
+  return decimals > stepDecimals(tickSize)
+    ? `The limit price must be a multiple of ${formatPrice(tickSize)}.`
+    : null;
+}
 
 // ---- decimal quantities (M8, D-86) ---------------------------------------------------------------------------------
 // A quantity is TEXT: digits, at most one dot, at most 8 decimals. Everything below works on the characters; nothing is
@@ -126,7 +193,11 @@ export interface PreviewState {
   readonly for: {
     readonly side: Side;
     readonly qty: string;
+    /** The ask or bid the user saw (MARKET orders; "" for a LIMIT order, which has no reference price). */
     readonly referencePrice: string;
+    readonly kind: OrderKind;
+    readonly limitPrice: string;
+    readonly tif: Tif;
   } | null;
   /** Only the newest request may update the state. */
   readonly requestId: number;
@@ -138,12 +209,15 @@ export interface Attempt {
   readonly side: Side;
   readonly qty: string;
   readonly referencePrice: string;
+  readonly kind: OrderKind;
+  readonly limitPrice: string;
+  readonly tif: Tif;
   /** The estimate the user reviewed (frozen: it does not change while they are reviewing). */
   readonly estimate: OrderPreviewResponse;
 }
 
 export type Outcome =
-  | { readonly kind: 'filled' | 'rejected'; readonly order: OrderResponse }
+  | { readonly kind: 'filled' | 'rejected' | 'accepted'; readonly order: OrderResponse }
   | { readonly kind: 'retryable'; readonly failure: ApiFailure }
   | { readonly kind: 'failed'; readonly failure: ApiFailure };
 
@@ -152,6 +226,9 @@ export type Phase = 'idle' | 'review' | 'submitting' | 'done';
 export interface TicketState {
   readonly side: Side;
   readonly qty: string;
+  readonly kind: OrderKind;
+  readonly limitPrice: string;
+  readonly tif: Tif;
   readonly preview: PreviewState;
   readonly phase: Phase;
   readonly attempt: Attempt | null;
@@ -169,6 +246,9 @@ export const initialPreview: PreviewState = {
 export const initialTicket: TicketState = {
   side: 'BUY',
   qty: '',
+  kind: 'MARKET',
+  limitPrice: '',
+  tif: 'DAY',
   preview: initialPreview,
   phase: 'idle',
   attempt: null,
@@ -178,6 +258,9 @@ export const initialTicket: TicketState = {
 export type TicketAction =
   | { type: 'setSide'; side: Side }
   | { type: 'setQty'; qty: string }
+  | { type: 'setKind'; kind: OrderKind }
+  | { type: 'setLimitPrice'; limitPrice: string }
+  | { type: 'setTif'; tif: Tif }
   | { type: 'previewStart'; requestId: number; for: NonNullable<PreviewState['for']> }
   | { type: 'previewOk'; requestId: number; data: OrderPreviewResponse }
   | { type: 'previewFail'; requestId: number; failure: ApiFailure }
@@ -202,10 +285,16 @@ export function isRetryable(f: ApiFailure): boolean {
 }
 
 /** An edit while reviewing closes the review and discards the attempt and the estimate it showed. */
-function edited(s: TicketState, patch: Partial<Pick<TicketState, 'side' | 'qty'>>): TicketState {
+function edited(
+  s: TicketState,
+  patch: Partial<Pick<TicketState, 'side' | 'qty' | 'kind' | 'limitPrice' | 'tif'>>,
+): TicketState {
   const changed =
     (patch.side !== undefined && patch.side !== s.side) ||
-    (patch.qty !== undefined && patch.qty !== s.qty);
+    (patch.qty !== undefined && patch.qty !== s.qty) ||
+    (patch.kind !== undefined && patch.kind !== s.kind) ||
+    (patch.limitPrice !== undefined && patch.limitPrice !== s.limitPrice) ||
+    (patch.tif !== undefined && patch.tif !== s.tif);
   if (!changed) return s;
   return {
     ...s,
@@ -224,6 +313,14 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
       return s.phase === 'submitting' || s.phase === 'done' ? s : edited(s, { side: a.side });
     case 'setQty':
       return s.phase === 'submitting' || s.phase === 'done' ? s : edited(s, { qty: a.qty });
+    case 'setKind':
+      return s.phase === 'submitting' || s.phase === 'done' ? s : edited(s, { kind: a.kind });
+    case 'setLimitPrice':
+      return s.phase === 'submitting' || s.phase === 'done'
+        ? s
+        : edited(s, { limitPrice: a.limitPrice });
+    case 'setTif':
+      return s.phase === 'submitting' || s.phase === 'done' ? s : edited(s, { tif: a.tif });
     case 'previewStart':
       if (s.phase === 'review' || s.phase === 'submitting') return s; // the review is frozen
       return {
@@ -233,7 +330,11 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
           // a re-preview for the same side and quantity (only the price moved) keeps showing the previous estimate,
           // marked as updating; any other change started from an empty preview (see edited())
           data:
-            s.preview.for?.side === a.for.side && s.preview.for.qty === a.for.qty
+            s.preview.for?.side === a.for.side &&
+            s.preview.for.qty === a.for.qty &&
+            s.preview.for.kind === a.for.kind &&
+            s.preview.for.limitPrice === a.for.limitPrice &&
+            s.preview.for.tif === a.for.tif
               ? s.preview.data
               : null,
           failure: null,
@@ -252,8 +353,17 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
     case 'openReview': {
       const p = s.preview;
       if (s.phase !== 'idle' || p.status !== 'ready' || p.data === null || p.for === null) return s;
-      if (!p.data.wouldFill) return s; // a preview that would be rejected cannot be reviewed
-      if (p.for.side !== s.side || p.for.qty !== s.qty) return s; // not the estimate of what is on the form
+      // a preview that would be rejected cannot be reviewed; a LIMIT order that would REST (no reject code, wouldFill false) can
+      if (p.data.rejectCode !== null) return s;
+      if (
+        p.for.side !== s.side ||
+        p.for.qty !== s.qty ||
+        p.for.kind !== s.kind ||
+        p.for.limitPrice !== s.limitPrice ||
+        p.for.tif !== s.tif
+      ) {
+        return s; // not the estimate of what is on the form
+      }
       return {
         ...s,
         phase: 'review',
@@ -264,6 +374,9 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
           side: s.side,
           qty: s.qty,
           referencePrice: p.for.referencePrice,
+          kind: s.kind,
+          limitPrice: s.limitPrice,
+          tif: s.tif,
           estimate: p.data,
         },
       };
@@ -280,7 +393,15 @@ export function ticketReducer(s: TicketState, a: TicketAction): TicketState {
         ...s,
         phase: 'done',
         attempt: null, // a definitive answer: the key is discarded
-        outcome: { kind: a.order.status === 'FILLED' ? 'filled' : 'rejected', order: a.order },
+        outcome: {
+          kind:
+            a.order.status === 'FILLED'
+              ? 'filled'
+              : a.order.status === 'ACCEPTED'
+                ? 'accepted'
+                : 'rejected',
+          order: a.order,
+        },
       };
     case 'submitRetryable':
       if (s.phase !== 'submitting' || s.attempt === null) return s;
@@ -319,6 +440,12 @@ export interface ReasonInput {
   readonly symbol: string;
   readonly side: Side;
   readonly qty: string;
+  /** MARKET (default) or LIMIT (M8b-1): a limit order rests, so a stale or closed quote does not block it. */
+  readonly kind?: OrderKind;
+  readonly limitPrice?: string;
+  readonly tickSize?: string;
+  /** What a SELL may still use: the position minus the quantity reserved for open orders (D-96). */
+  readonly positionAvailable?: string | null | undefined;
   /** false when orders cannot be placed for this instrument (the MVP gate is missing): prices only. */
   readonly tradable?: boolean;
   /** The instrument's step and minimum quantity (M8); absent in older callers: only the whole-number rules apply. */
@@ -352,22 +479,25 @@ export function disabledReason(i: ReasonInput): string | null {
     return sv.explanation ?? 'This instrument cannot be traded right now.';
   }
 
-  switch (i.quote.freshness) {
-    case 'UNAVAILABLE':
+  const limit = i.kind === 'LIMIT';
+  if (!limit) {
+    switch (i.quote.freshness) {
+      case 'UNAVAILABLE':
+        return 'There is no usable price right now, so orders cannot be placed.';
+      case 'CLOSED':
+        return 'The market is closed, so orders cannot be placed.';
+      case 'STALE':
+        return 'The latest price is too old to trade on, so orders cannot be placed.';
+      case 'REAL_TIME':
+      case 'DELAYED':
+        break;
+    }
+    if (i.quote.bid === undefined || i.quote.ask === undefined) {
       return 'There is no usable price right now, so orders cannot be placed.';
-    case 'CLOSED':
-      return 'The market is closed, so orders cannot be placed.';
-    case 'STALE':
-      return 'The latest price is too old to trade on, so orders cannot be placed.';
-    case 'REAL_TIME':
-    case 'DELAYED':
-      break;
+    }
+    if (i.refreshFailed)
+      return "We can't refresh the price right now, so orders are paused until we can.";
   }
-  if (i.quote.bid === undefined || i.quote.ask === undefined) {
-    return 'There is no usable price right now, so orders cannot be placed.';
-  }
-  if (i.refreshFailed)
-    return "We can't refresh the price right now, so orders are paused until we can.";
 
   if (!qtyComplete(i.qty)) return 'Enter a quantity.';
   if (qtyTooLarge(i.qty)) {
@@ -379,17 +509,24 @@ export function disabledReason(i: ReasonInput): string | null {
   if (i.minQty !== undefined && compareDecimalText(i.qty, i.minQty) < 0) {
     return `The smallest order for ${i.symbol} is ${formatQty(i.minQty)}.`;
   }
+  if (limit) {
+    if (!qtyComplete(i.limitPrice ?? '')) return 'Enter a limit price.';
+    const tick = tickMessage(i.limitPrice ?? '', i.tickSize);
+    if (tick !== null) return tick;
+  }
   // an unknown position (undefined) is not blocked here: the preview then answers INSUFFICIENT_POSITION if it is wrong
-  const noShares =
-    i.positionQty === null ||
-    (i.positionQty !== undefined && qtyEmpty(i.positionQty.replace(/\.0+$/, '')));
-  if (i.side === 'SELL' && noShares) {
+  const empty = (q: string | null | undefined): boolean =>
+    q === null || (q !== undefined && qtyEmpty(q.replace(/\.0+$/, '')));
+  if (i.side === 'SELL' && empty(i.positionQty)) {
     return `You do not own any ${i.symbol} to sell.`;
+  }
+  if (i.side === 'SELL' && empty(i.positionAvailable)) {
+    return `All of your ${i.symbol} is already committed to open orders.`;
   }
 
   const p = i.preview;
   if (p.status === 'none' || p.status === 'loading') return 'Calculating the estimate…';
   if (p.status === 'error') return "We couldn't calculate the estimate. Please try again.";
-  if (p.data !== null && !p.data.wouldFill) return rejectMessage(p.data.rejectCode);
+  if (p.data !== null && p.data.rejectCode !== null) return rejectMessage(p.data.rejectCode);
   return null;
 }

@@ -37,6 +37,9 @@ const h = await createOrdersHarness(db, {
     DEMO_MODE: 'true',
     // M7b: a second e2e profile runs the simulated 24/7 stock session (D-76); the default is the NYSE calendar
     SIM_SESSION: process.env.E2E_SIM_SESSION === 'ALWAYS_OPEN' ? 'ALWAYS_OPEN' : 'NYSE',
+    // M8b-1: the limit-order matcher runs in the e2e API (the quotes it evaluates are the ones the control server pins)
+    MATCHER: 'on',
+    MATCHER_INTERVAL_MS: '300',
   },
 });
 await h.app.listen(apiPort, '127.0.0.1');

@@ -53,8 +53,13 @@ const order = (over: Partial<OrderResponse> = {}): OrderResponse => ({
   side: 'BUY',
   type: 'MARKET',
   status: 'FILLED',
+  tif: 'DAY',
   qty: '10',
   filledQty: '10',
+  limitPrice: null,
+  reservedUsd: '0.00',
+  expiresAt: null,
+  version: 1,
   rejectCode: null,
   createdAt: '2026-11-10T15:00:00.000Z',
   execution: null,
@@ -78,7 +83,14 @@ const ready = (): TicketState =>
     {
       type: 'previewStart',
       requestId: 1,
-      for: { side: 'BUY', qty: '10', referencePrice: '190.00' },
+      for: {
+        side: 'BUY',
+        qty: '10',
+        referencePrice: '190.00',
+        kind: 'MARKET',
+        limitPrice: '',
+        tif: 'DAY',
+      },
     },
     { type: 'previewOk', requestId: 1, data: estimate() },
   ]);
@@ -271,7 +283,14 @@ describe('reviewing needs the estimate of what is on the form', () => {
       {
         type: 'previewStart',
         requestId: 1,
-        for: { side: 'BUY', qty: '10', referencePrice: '190.00' },
+        for: {
+          side: 'BUY',
+          qty: '10',
+          referencePrice: '190.00',
+          kind: 'MARKET',
+          limitPrice: '',
+          tif: 'DAY',
+        },
       },
       {
         type: 'previewOk',
@@ -289,12 +308,26 @@ describe('reviewing needs the estimate of what is on the form', () => {
       {
         type: 'previewStart',
         requestId: 1,
-        for: { side: 'BUY', qty: '10', referencePrice: '190.00' },
+        for: {
+          side: 'BUY',
+          qty: '10',
+          referencePrice: '190.00',
+          kind: 'MARKET',
+          limitPrice: '',
+          tif: 'DAY',
+        },
       },
       {
         type: 'previewStart',
         requestId: 2,
-        for: { side: 'BUY', qty: '10', referencePrice: '191.00' },
+        for: {
+          side: 'BUY',
+          qty: '10',
+          referencePrice: '191.00',
+          kind: 'MARKET',
+          limitPrice: '',
+          tif: 'DAY',
+        },
       },
       { type: 'previewOk', requestId: 1, data: estimate({ estimatedPrice: '1.00' }) },
     ]);
@@ -307,7 +340,14 @@ describe('reviewing needs the estimate of what is on the form', () => {
     const price = ticketReducer(ready(), {
       type: 'previewStart',
       requestId: 2,
-      for: { side: 'BUY', qty: '10', referencePrice: '191.00' },
+      for: {
+        side: 'BUY',
+        qty: '10',
+        referencePrice: '191.00',
+        kind: 'MARKET',
+        limitPrice: '',
+        tif: 'DAY',
+      },
     });
     expect(price.preview.status).toBe('loading');
     expect(price.preview.data).not.toBeNull();
@@ -320,7 +360,14 @@ describe('reviewing needs the estimate of what is on the form', () => {
     const t = ticketReducer(s, {
       type: 'previewStart',
       requestId: 5,
-      for: { side: 'BUY', qty: '10', referencePrice: '200.00' },
+      for: {
+        side: 'BUY',
+        qty: '10',
+        referencePrice: '200.00',
+        kind: 'MARKET',
+        limitPrice: '',
+        tif: 'DAY',
+      },
     });
     expect(t).toBe(s);
   });

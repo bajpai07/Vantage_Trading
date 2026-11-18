@@ -16,14 +16,16 @@ import {
   disabledReason,
   initialTicket,
   isRetryable,
+  orderRequestBody,
   qtyComplete,
   qtyTooLarge,
   referencePriceFor,
+  sanitizeLimitPrice,
   sanitizeQtyFor,
   stepDecimals,
   ticketReducer,
 } from '../lib/ticket';
-import type { Side } from '../lib/ticket';
+import type { OrderKind, Side, Tif } from '../lib/ticket';
 import { Alert, inputClass, secondaryButtonClass } from './ui';
 
 const PREVIEW_DEBOUNCE_MS = 300;
@@ -68,6 +70,11 @@ export function OrderTicket(props: {
     quote,
     refreshFailed,
     positionQty: position === undefined ? undefined : position === null ? null : position.qty,
+    positionAvailable:
+      position === undefined ? undefined : position === null ? null : position.qtyAvailable,
+    kind: t.kind,
+    limitPrice: t.limitPrice,
+    tickSize: instrument.tickSize,
     preview: t.preview,
     submitting: t.phase === 'submitting',
   });
@@ -83,11 +90,21 @@ export function OrderTicket(props: {
     quote,
     refreshFailed: false,
     positionQty: position === undefined ? undefined : position === null ? null : position.qty,
+    positionAvailable:
+      position === undefined ? undefined : position === null ? null : position.qtyAvailable,
+    kind: t.kind,
+    limitPrice: t.limitPrice,
+    tickSize: instrument.tickSize,
     preview: { ...t.preview, status: 'ready', data: null },
     submitting: false,
   });
+  // a LIMIT order needs no price from the quote (it rests); a MARKET order needs the price the user saw
   const canPreview =
-    preReason === null && refPrice !== null && qtyComplete(t.qty) && !qtyTooLarge(t.qty);
+    preReason === null &&
+    (t.kind === 'LIMIT' || refPrice !== null) &&
+    qtyComplete(t.qty) &&
+    !qtyTooLarge(t.qty);
+  const evaluable = quote.freshness === 'REAL_TIME' || quote.freshness === 'DELAYED';
 
   // "Max" (D-90): the server computes the largest quantity (the same engine code as the order); this only fills the string.
   // The reasons that do not depend on the quantity (not tradable, no usable price, nothing owned to sell) disable it.
@@ -102,6 +119,11 @@ export function OrderTicket(props: {
     quote,
     refreshFailed,
     positionQty: position === undefined ? undefined : position === null ? null : position.qty,
+    positionAvailable:
+      position === undefined ? undefined : position === null ? null : position.qtyAvailable,
+    kind: t.kind,
+    limitPrice: t.limitPrice,
+    tickSize: instrument.tickSize,
     preview: { ...t.preview, status: 'ready', data: null },
     submitting: t.phase === 'submitting',
   });
@@ -111,13 +133,21 @@ export function OrderTicket(props: {
     setMaxNote(null);
   }, [t.side, t.qty]);
   async function fillMax(): Promise<void> {
-    if (maxReason !== null || refPrice === null || maxBusy) return;
+    if (maxReason !== null || (t.kind === 'MARKET' && refPrice === null) || maxBusy) return;
     setMaxBusy(true);
     setMaxNote(null);
     // any valid quantity gets the answer: the maximum does not depend on it
     const ask = qtyComplete(t.qty) && !qtyTooLarge(t.qty) ? t.qty : instrument.minQty;
     const r = await clientRequest('POST', '/v1/orders/preview', OrderPreviewResponse, {
-      body: { symbol, side: t.side, type: 'MARKET', qty: ask, referencePrice: refPrice },
+      body: orderRequestBody({
+        symbol,
+        side: t.side,
+        kind: t.kind,
+        qty: ask,
+        referencePrice: refPrice ?? '',
+        limitPrice: t.limitPrice,
+        tif: t.tif,
+      }),
     });
     setMaxBusy(false);
     if (!r.ok) {
@@ -143,20 +173,36 @@ export function OrderTicket(props: {
   // screen, marked as updating, until the new one arrives).
   useEffect(() => {
     if (t.phase !== 'idle') return;
-    if (!canPreview || refPrice === null) {
+    if (!canPreview || (t.kind === 'MARKET' && refPrice === null)) {
       dispatch({ type: 'previewClear' });
       return;
     }
+    const reference = t.kind === 'MARKET' ? (refPrice ?? '') : '';
     const timer = setTimeout(() => {
       const requestId = (requestSeq.current += 1);
       dispatch({
         type: 'previewStart',
         requestId,
-        for: { side: t.side, qty: t.qty, referencePrice: refPrice },
+        for: {
+          side: t.side,
+          qty: t.qty,
+          referencePrice: reference,
+          kind: t.kind,
+          limitPrice: t.limitPrice,
+          tif: t.tif,
+        },
       });
       void (async () => {
         const r = await clientRequest('POST', '/v1/orders/preview', OrderPreviewResponse, {
-          body: { symbol, side: t.side, type: 'MARKET', qty: t.qty, referencePrice: refPrice },
+          body: orderRequestBody({
+            symbol,
+            side: t.side,
+            kind: t.kind,
+            qty: t.qty,
+            referencePrice: reference,
+            limitPrice: t.limitPrice,
+            tif: t.tif,
+          }),
         });
         if (r.ok) dispatch({ type: 'previewOk', requestId, data: r.data });
         else if (r.kind === 'unauthenticated') router.replace(loginUrlFor(pathname));
@@ -164,7 +210,19 @@ export function OrderTicket(props: {
       })();
     }, PREVIEW_DEBOUNCE_MS);
     return () => clearTimeout(timer);
-  }, [t.phase, canPreview, t.side, t.qty, refPrice, symbol, router, pathname]);
+  }, [
+    t.phase,
+    canPreview,
+    t.side,
+    t.qty,
+    t.kind,
+    t.limitPrice,
+    t.tif,
+    refPrice,
+    symbol,
+    router,
+    pathname,
+  ]);
 
   // the review/result dialog is a native modal <dialog>: it traps focus, Escape closes it, and focus returns to the
   // button that opened it
@@ -208,19 +266,21 @@ export function OrderTicket(props: {
     dispatch({ type: 'submitStart' });
     const r = await clientRequest('POST', '/v1/orders', OrderResponse, {
       headers: { 'Idempotency-Key': a.key },
-      body: {
+      body: orderRequestBody({
         symbol: a.symbol,
         side: a.side,
-        type: 'MARKET',
+        kind: a.kind,
         qty: a.qty,
         referencePrice: a.referencePrice,
-      },
+        limitPrice: a.limitPrice,
+        tif: a.tif,
+      }),
     });
     inflight.current = false;
     if (r.ok) {
       dispatch({ type: 'submitDone', order: r.data });
-      if (r.data.status === 'FILLED')
-        router.refresh(); // the position and recent orders update without a reload
+      if (r.data.status === 'FILLED' || r.data.status === 'ACCEPTED')
+        router.refresh(); // the position, the reserved cash and recent orders update without a reload
       else if (r.data.rejectCode === 'PRICE_MOVED') props.refreshQuote(); // show the current price
     } else if (r.kind === 'unauthenticated') {
       router.replace(loginUrlFor(pathname));
@@ -244,7 +304,39 @@ export function OrderTicket(props: {
       <h2 id="ticket-title" className="mb-2 text-[16px] font-semibold leading-[22px] text-text-0">
         Order ticket
       </h2>
-      <form onSubmit={openReview} noValidate aria-label="Market order">
+      <form
+        onSubmit={openReview}
+        noValidate
+        aria-label={t.kind === 'LIMIT' ? 'Limit order' : 'Market order'}
+      >
+        <fieldset className="mb-3">
+          <legend className="mb-1 text-[12px] text-text-2">Order type</legend>
+          <div className="grid grid-cols-2 gap-2">
+            {(['MARKET', 'LIMIT'] as const).map((kind: OrderKind) => (
+              <label
+                key={kind}
+                className={`flex min-h-11 cursor-pointer items-center justify-center rounded-md border text-[13px] font-semibold md:min-h-9 ${
+                  t.kind === kind
+                    ? 'border-accent bg-bg-3 text-text-0'
+                    : 'border-line-strong text-text-1 hover:bg-bg-3'
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="kind"
+                  value={kind}
+                  checked={t.kind === kind}
+                  onChange={() => dispatch({ type: 'setKind', kind })}
+                  className="sr-only"
+                  data-testid={`kind-${kind.toLowerCase()}`}
+                />
+                {kind === 'MARKET' ? 'Market' : 'Limit'}
+                {t.kind === kind ? <span className="sr-only"> (selected)</span> : null}
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
         <fieldset className="mb-3">
           <legend className="mb-1 text-[12px] text-text-2">Side</legend>
           <div className="grid grid-cols-2 gap-2">
@@ -336,6 +428,74 @@ export function OrderTicket(props: {
           </p>
         </div>
 
+        {t.kind === 'LIMIT' ? (
+          <div className="mb-3">
+            <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div>
+                <label htmlFor="ticket-limit" className="mb-1 block text-[12px] text-text-2">
+                  Limit price (USD)
+                </label>
+                <input
+                  id="ticket-limit"
+                  name="limitPrice"
+                  data-testid="ticket-limit"
+                  inputMode="decimal"
+                  autoComplete="off"
+                  maxLength={21}
+                  value={t.limitPrice}
+                  aria-describedby="ticket-limit-help ticket-reason"
+                  onBeforeInput={(e) => {
+                    const data = (e.nativeEvent as InputEvent).data;
+                    if (data !== null && data !== undefined && !/^[0-9.]+$/.test(data))
+                      e.preventDefault();
+                  }}
+                  onPaste={(e) => {
+                    if (!/^[0-9]*\.?[0-9]*$/.test(e.clipboardData.getData('text').trim()))
+                      e.preventDefault();
+                  }}
+                  onChange={(e) =>
+                    dispatch({
+                      type: 'setLimitPrice',
+                      limitPrice: sanitizeLimitPrice(e.target.value),
+                    })
+                  }
+                  className={`${inputClass} num`}
+                />
+              </div>
+              <div>
+                <label htmlFor="ticket-tif" className="mb-1 block text-[12px] text-text-2">
+                  Time in force
+                </label>
+                <select
+                  id="ticket-tif"
+                  name="tif"
+                  data-testid="ticket-tif"
+                  value={t.tif}
+                  onChange={(e) => dispatch({ type: 'setTif', tif: e.target.value as Tif })}
+                  className={inputClass}
+                >
+                  <option value="DAY">Day</option>
+                  <option value="GTC">Good till cancelled</option>
+                </select>
+              </div>
+            </div>
+            <p
+              id="ticket-limit-help"
+              data-testid="ticket-limit-help"
+              className="mt-1 text-[12px] text-text-2"
+            >
+              Price step {formatPrice(instrument.tickSize)}. A buy holds its cash, a sell holds its
+              quantity, until the order fills, is cancelled or expires.
+            </p>
+            {evaluable ? null : (
+              <p data-testid="limit-rest-note" className="text-[12px] text-text-1">
+                The market is not live right now: this order will be evaluated when the market is
+                open and the quote is live.
+              </p>
+            )}
+          </div>
+        ) : null}
+
         <div
           className={`mb-3 rounded-md border border-line bg-bg-2 px-3 py-2 text-[12px] ${updating ? 'opacity-60' : ''}`}
           data-testid="ticket-estimate"
@@ -348,6 +508,39 @@ export function OrderTicket(props: {
             <p className="text-text-2" data-testid="estimate-empty">
               {t.preview.status === 'loading' ? 'Calculating…' : DASH}
             </p>
+          ) : t.kind === 'LIMIT' ? (
+            <dl className="num grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
+              <dt className="text-text-2">What happens</dt>
+              <dd className="text-right text-text-0" data-testid="estimate-mode">
+                {est.marketable === true
+                  ? `Fills now at about ${est.estimatedPrice === null ? DASH : formatPrice(est.estimatedPrice)}`
+                  : 'Rests until filled, cancelled or expired'}
+              </dd>
+              {t.side === 'BUY' ? (
+                <>
+                  <dt className="text-text-2">Cash held back</dt>
+                  <dd className="text-right text-text-0" data-testid="estimate-reserve">
+                    {est.reserveUsd === null || est.reserveUsd === undefined
+                      ? DASH
+                      : formatMoney(est.reserveUsd)}
+                  </dd>
+                </>
+              ) : null}
+              <dt className="text-text-2">Cash after</dt>
+              <dd className="text-right text-text-0" data-testid="estimate-cash-after">
+                {formatMoney(est.estimatedCashAfter)}
+              </dd>
+              {est.marketable === true ? null : (
+                <>
+                  <dt className="text-text-2">Expires</dt>
+                  <dd className="text-right text-text-0" data-testid="estimate-expires">
+                    {est.expiresAt === null || est.expiresAt === undefined
+                      ? DASH
+                      : formatUtc(est.expiresAt)}
+                  </dd>
+                </>
+              )}
+            </dl>
           ) : (
             <dl className="num grid grid-cols-[auto_1fr] gap-x-4 gap-y-0.5">
               <dt className="text-text-2">Estimated price</dt>
@@ -402,6 +595,7 @@ export function OrderTicket(props: {
           className={t.side === 'BUY' ? BUY_BUTTON : SELL_BUTTON}
         >
           {t.side === 'BUY' ? 'Review buy order' : 'Review sell order'}
+          {t.kind === 'LIMIT' ? ' (limit)' : ''}
         </button>
       </form>
 
@@ -433,25 +627,71 @@ export function OrderTicket(props: {
               <span className="num text-text-0">
                 {formatQty(t.attempt.qty)} {t.attempt.symbol}
               </span>{' '}
-              at about{' '}
-              <span className="num text-text-0">
-                {t.attempt.estimate.estimatedPrice === null
-                  ? DASH
-                  : formatPrice(t.attempt.estimate.estimatedPrice)}
-              </span>
-              . Market order.
+              {t.attempt.kind === 'LIMIT' ? (
+                <>
+                  with a limit of{' '}
+                  <span className="num text-text-0">{formatPrice(t.attempt.limitPrice)}</span> (
+                  {t.attempt.tif === 'GTC' ? 'good till cancelled' : 'day order'}).
+                </>
+              ) : (
+                <>
+                  at about{' '}
+                  <span className="num text-text-0">
+                    {t.attempt.estimate.estimatedPrice === null
+                      ? DASH
+                      : formatPrice(t.attempt.estimate.estimatedPrice)}
+                  </span>
+                  . Market order.
+                </>
+              )}
             </p>
+            {t.attempt.kind === 'LIMIT' ? (
+              <p className="mb-3 text-[13px] text-text-0" data-testid="review-mode">
+                {t.attempt.estimate.marketable === true
+                  ? `Fills now at about ${t.attempt.estimate.estimatedPrice === null ? DASH : formatPrice(t.attempt.estimate.estimatedPrice)}.`
+                  : 'Resting until filled, cancelled or expired.'}
+              </p>
+            ) : null}
             <dl className="num mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border border-line bg-bg-2 px-3 py-2 text-[13px]">
-              <dt className="text-text-2">
-                {t.attempt.side === 'BUY' ? 'Estimated cost' : 'Estimated value'}
-              </dt>
-              <dd className="text-right text-text-0" data-testid="review-notional">
-                {formatMoney(t.attempt.estimate.estimatedNotional)}
-              </dd>
-              <dt className="text-text-2">Fee</dt>
-              <dd className="text-right text-text-0" data-testid="review-fee">
-                {formatMoney(t.attempt.estimate.estimatedFee)}
-              </dd>
+              {t.attempt.kind === 'LIMIT' && t.attempt.estimate.marketable !== true ? (
+                <>
+                  {t.attempt.side === 'BUY' ? (
+                    <>
+                      <dt className="text-text-2">Cash held back</dt>
+                      <dd className="text-right text-text-0" data-testid="review-reserve">
+                        {formatMoney(t.attempt.estimate.reserveUsd)}
+                      </dd>
+                    </>
+                  ) : (
+                    <>
+                      <dt className="text-text-2">Quantity held back</dt>
+                      <dd className="text-right text-text-0" data-testid="review-reserve">
+                        {formatQty(t.attempt.qty)} {t.attempt.symbol}
+                      </dd>
+                    </>
+                  )}
+                  <dt className="text-text-2">Expires</dt>
+                  <dd className="text-right text-text-0" data-testid="review-expires">
+                    {t.attempt.estimate.expiresAt === null ||
+                    t.attempt.estimate.expiresAt === undefined
+                      ? DASH
+                      : formatUtc(t.attempt.estimate.expiresAt)}
+                  </dd>
+                </>
+              ) : (
+                <>
+                  <dt className="text-text-2">
+                    {t.attempt.side === 'BUY' ? 'Estimated cost' : 'Estimated value'}
+                  </dt>
+                  <dd className="text-right text-text-0" data-testid="review-notional">
+                    {formatMoney(t.attempt.estimate.estimatedNotional)}
+                  </dd>
+                  <dt className="text-text-2">Fee</dt>
+                  <dd className="text-right text-text-0" data-testid="review-fee">
+                    {formatMoney(t.attempt.estimate.estimatedFee)}
+                  </dd>
+                </>
+              )}
               {t.attempt.side === 'SELL' ? (
                 <>
                   <dt className="text-text-2">Estimated proceeds</dt>
@@ -513,7 +753,64 @@ export function OrderTicket(props: {
                   ? 'Placing your order…'
                   : t.outcome?.kind === 'retryable'
                     ? 'Retry safely'
-                    : `${t.attempt.side === 'BUY' ? 'Buy' : 'Sell'} ${formatQty(t.attempt.qty)} ${t.attempt.symbol}`}
+                    : `${t.attempt.side === 'BUY' ? 'Buy' : 'Sell'} ${formatQty(t.attempt.qty)} ${t.attempt.symbol}${t.attempt.kind === 'LIMIT' ? ' (limit)' : ''}`}
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {t.phase === 'done' && t.outcome !== null && t.outcome.kind === 'accepted' ? (
+          <div aria-live="polite" role="status" data-testid="result-accepted">
+            <h2
+              id="ticket-dialog-title"
+              ref={headingRef}
+              tabIndex={-1}
+              className="mb-2 text-[16px] font-semibold text-text-0"
+            >
+              <span aria-hidden="true" className="text-up">
+                ●{' '}
+              </span>
+              Order placed
+            </h2>
+            <p className="mb-2 text-[13px] text-text-0" data-testid="result-accepted-text">
+              Your limit order is resting until it fills, you cancel it or it expires.
+            </p>
+            <dl className="num mb-3 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 rounded-md border border-line bg-bg-2 px-3 py-2 text-[13px]">
+              <dt className="text-text-2">Order</dt>
+              <dd className="text-right text-text-0" data-testid="result-order">
+                {t.outcome.order.side === 'BUY' ? 'Buy' : 'Sell'} {formatQty(t.outcome.order.qty)}{' '}
+                {t.outcome.order.symbol}
+              </dd>
+              <dt className="text-text-2">Limit price</dt>
+              <dd className="text-right text-text-0" data-testid="result-limit">
+                {t.outcome.order.limitPrice === null
+                  ? DASH
+                  : formatPrice(t.outcome.order.limitPrice)}
+              </dd>
+              {t.outcome.order.side === 'BUY' ? (
+                <>
+                  <dt className="text-text-2">Cash held back</dt>
+                  <dd className="text-right text-text-0" data-testid="result-reserved">
+                    {formatMoney(t.outcome.order.reservedUsd)}
+                  </dd>
+                </>
+              ) : null}
+              <dt className="text-text-2">Expires</dt>
+              <dd className="text-right text-text-0" data-testid="result-expires">
+                {t.outcome.order.expiresAt === null ? DASH : formatUtc(t.outcome.order.expiresAt)}
+              </dd>
+            </dl>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <Link href="/orders" className="text-[13px] underline" data-testid="result-link">
+                View in your orders
+              </Link>
+              <button
+                type="button"
+                onClick={closeDone}
+                className={secondaryButtonClass}
+                data-testid="result-close"
+              >
+                Done
               </button>
             </div>
           </div>

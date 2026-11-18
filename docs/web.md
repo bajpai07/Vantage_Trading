@@ -155,11 +155,15 @@ Shown on the Orders screen (`src/lib/reject-copy.ts`; a unit test checks that th
 
 Labelled fields with inline errors tied by `aria-invalid` and `aria-describedby`, a skip link, visible 2 px focus rings, tables with captions and header cells, a focusable scroll region for wide tables, `prefers-reduced-motion` respected, links in text underlined. Below 768 px the navigation is a bottom tab bar with 44 px targets; at 375 px there is no horizontal page scroll (wide tables scroll inside their own region). axe-core reports no serious or critical violation on any page in the e2e run (WCAG 2.2 AA tags).
 
+## Limit orders (M8b-1)
+
+The ticket has an order-type choice (Market or Limit). A limit order takes a limit price (a string, validated against the price step on the page and again by the server) and a time in force (Day or Good till cancelled). The estimate and review show the cash reserved (a BUY) or the quantity held (a SELL) and when the order expires; every figure is a string from the preview endpoint, with no arithmetic in the browser. A limit on a price that would not fill yet rests: the dialog says so and the Orders page lists it under Open orders with a Cancel button (one idempotency key per attempt, as for Confirm). History shows a status chip (glyph and word) per order. The Portfolio shows Reserved next to Cash, the equity identity, and the quantity reserved per position. Stale, closed or unavailable quotes do not block a limit order (it rests); they still block a market order.
+
 ## Known limits
 
 - Tables scroll sideways on a phone instead of turning into two-line cards (DESIGN_SYSTEM section 5); the terminal layout is not built.
 - Shared per-IP limits are fixed by the trusted-proxy setting (D-69, api.md): set `TRUSTED_PROXY_CIDRS` on the API and `TRUST_FORWARDED_FOR` on the web app in staging and production.
-- No watchlist screens and no charts (they need M3b data). Limit and stop orders, fractional shares and streaming prices are out of scope.
+- No watchlist screens and no charts (they need M3b data). Stop orders, partial fills, order-book depth and streaming prices are out of scope.
 - The idempotency key is memory-only: reloading the page during an uncertain order loses it, and the dialog points the user to the Orders page to check.
 - Not-found instrument pages answer HTTP 200 (the streamed loading state commits the status first); they are marked `noindex`.
 - No Storybook, visual regression or Lighthouse budget yet (DESIGN_SYSTEM section 10); the e2e suite is not in CI.

@@ -8,7 +8,7 @@ import { clientGet } from '../lib/client-api';
 import { describeFailure } from '../lib/errors';
 import type { FailureMessage } from '../lib/errors';
 import { formatUtc, formatUtcShort } from '../lib/format';
-import { DASH, formatPrice, formatQty } from '../lib/money';
+import { DASH, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
 import { EquityLine } from './equity-line';
 import { FreshnessBadge } from './freshness-badge';
 import { MetricCard, Money, PnlCell } from './money';
@@ -108,7 +108,7 @@ export function PortfolioView(props: {
         </div>
       ) : null}
 
-      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-6">
+      <div className="mb-4 grid grid-cols-2 gap-2 md:grid-cols-3 lg:grid-cols-7">
         <MetricCard
           label="Equity"
           testId="metric-equity"
@@ -118,6 +118,9 @@ export function PortfolioView(props: {
         </MetricCard>
         <MetricCard label="Cash" testId="metric-cash">
           <Money value={p.cash} exact={p.exact.cash} />
+        </MetricCard>
+        <MetricCard label="Reserved" testId="metric-reserved" note="Held for open limit orders">
+          <Money value={p.reservedUsd} exact={p.exact.reservedUsd} />
         </MetricCard>
         <MetricCard
           label="Total return"
@@ -180,11 +183,16 @@ export function PortfolioView(props: {
 
       <details className="mt-6" data-testid="exact-amounts">
         <summary className="cursor-pointer text-[13px] text-accent">Exact amounts</summary>
+        <p className="mt-2 text-[12px] text-text-2" data-testid="equity-identity">
+          Equity = cash + reserved + positions value. Cash + reserved + cost basis + fees − realised
+          P&amp;L always equals your starting capital.
+        </p>
         <dl className="num mt-2 grid max-w-md grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-[12px]">
           {(
             [
               ['Equity', p.exact.equity],
               ['Cash', p.exact.cash],
+              ['Reserved', p.exact.reservedUsd],
               ['Positions value', p.exact.positionsValue],
               ['Cost basis', p.exact.costBasis],
               ['Unrealised P&L', p.exact.unrealisedPnl],
@@ -272,7 +280,14 @@ function PositionsTable({ positions }: { positions: readonly PortfolioPosition[]
                     </div>
                   ) : null}
                 </th>
-                <td className={`num ${TD}`}>{formatQty(pos.qty)}</td>
+                <td className={`num ${TD}`}>
+                  {formatQty(pos.qty)}
+                  {isZeroDecimal(pos.qtyReserved) ? null : (
+                    <div className="text-[11px] text-text-2" data-testid="qty-reserved">
+                      {formatQty(pos.qtyReserved)} reserved
+                    </div>
+                  )}
+                </td>
                 <td className={`num ${TD}`}>
                   <span title={`Cost basis ${pos.exact.costBasis}`}>
                     {formatPrice(pos.avgCost)}

@@ -181,6 +181,8 @@ export default tseslint.config(
       'apps/web/src/lib/change.ts',
       'apps/web/src/components/change-cell.tsx',
       'apps/web/src/components/order-ticket.tsx',
+      'apps/web/src/lib/orders-view.ts',
+      'apps/web/src/components/orders-list.tsx',
     ],
     ignores: ['**/*.test.ts'],
     rules: {

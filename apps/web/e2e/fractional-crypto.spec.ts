@@ -118,7 +118,15 @@ test.describe('1. buy 0.0025 BTC-USD (vector A) and sell 0.001 (vector B) throug
     const pos = await apiGet<{
       positions: Array<{ symbol: string; qty: string; avgCost: string }>;
     }>(context, '/v1/positions');
-    expect(pos.positions).toEqual([{ symbol: 'BTC-USD', qty: '0.0015', avgCost: '90055.01' }]);
+    expect(pos.positions).toMatchObject([
+      {
+        symbol: 'BTC-USD',
+        qty: '0.0015',
+        avgCost: '90055.01',
+        qtyReserved: '0',
+        qtyAvailable: '0.0015',
+      },
+    ]);
     const rec = await reconcile(email);
     expect(rec.violations).toEqual([]);
     expect(rec.accounts).toBe(1);
