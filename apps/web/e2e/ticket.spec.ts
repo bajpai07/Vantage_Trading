@@ -558,6 +558,8 @@ test.describe('10. accessibility and the keyboard', () => {
     await page.keyboard.type('10');
     await expect(page.getByTestId('estimate-price')).toBeVisible({ timeout: 10_000 });
     await expect(reviewButton(page)).toBeEnabled();
+    await page.keyboard.press('Tab'); // M8: the Max button sits between the quantity and Review
+    await expect(focused('ticket-max')).toHaveCount(1);
     await page.keyboard.press('Tab');
     await expect(focused('review-button')).toHaveCount(1);
     await page.keyboard.press('Enter');
@@ -614,24 +616,33 @@ test.describe('10. accessibility and the keyboard', () => {
     await page.screenshot({ path: `${SHOTS}/ticket-review-375.png` });
   });
 
-  test('the quantity field takes digits only: letters, signs, decimals, exponents and a paste of "1.5" never get in', async ({
+  test('the quantity field takes digits and one dot only (M8): letters, signs and exponents never get in, a paste that is not a plain decimal is refused; a fraction on a whole-share stock is kept and blocked with the step message', async ({
     page,
   }) => {
     await register(page);
     await page.goto('/instruments/AAPL');
     const qty = page.getByTestId('ticket-qty');
     await qty.click();
-    await page.keyboard.type('1a-.e5+ 0');
+    await page.keyboard.type('1a-e5+ 0');
     await expect(qty).toHaveValue('150');
     await qty.fill('');
-    await qty.evaluate((el) => {
-      const dt = new DataTransfer();
-      dt.setData('text', '1.5');
-      el.dispatchEvent(
-        new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
-      );
-    });
+    const paste = (text: string) =>
+      qty.evaluate((el, t) => {
+        const dt = new DataTransfer();
+        dt.setData('text', t);
+        el.dispatchEvent(
+          new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true }),
+        );
+      }, text);
+    await paste('1e5'); // an exponent is refused
     await expect(qty).toHaveValue('');
+    await paste('-5');
+    await expect(qty).toHaveValue('');
+    await qty.fill('1.5'); // a decimal is allowed into the field, then blocked for a whole-share instrument
+    await expect(qty).toHaveValue('1.5');
+    await expect(page.getByTestId('ticket-reason')).toContainText('steps of 1');
+    await expect(reviewButton(page)).toBeDisabled();
+    await qty.fill('');
     await qty.fill('99999999');
     await expect(qty).toHaveValue('9999999');
     await expect(reviewButton(page)).toBeDisabled();

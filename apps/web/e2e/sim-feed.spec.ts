@@ -7,6 +7,7 @@ import { apiGet, control, counts, enterQty, placeOrder, reconcile, register } fr
 
 const OPEN = '2026-11-10T15:00:00.000Z';
 const M7A = '../../docs/phase-reports/m7a'; // screenshots
+const M8 = '../../docs/phase-reports/m8'; // screenshots
 
 test.beforeEach(async () => {
   await control('/clock', { iso: OPEN });
@@ -120,8 +121,8 @@ test.describe('a SIM stock, through the ticket (exact strings)', () => {
   });
 });
 
-test.describe('crypto is display-only until M8', () => {
-  test('search finds it; the page shows live-labelled (SIM) quotes, the 24/7 market line, and Buy/Sell disabled with "not tradable yet"', async ({
+test.describe('crypto is tradable since M8 (it was display-only in M7a)', () => {
+  test('search finds it; the page shows live-labelled (SIM) quotes, the 24/7 market line, and the ticket is open: 1 BTC is more than the cash, 0.01 BTC is fine', async ({
     page,
   }) => {
     await register(page);
@@ -142,21 +143,17 @@ test.describe('crypto is display-only until M8', () => {
     await expect(page.getByTestId('market-line')).toHaveAttribute('data-market-state', 'OPEN');
     await expect(page.getByTestId('market-line')).toContainText('Crypto (simulated, 24/7) is open');
 
-    // no estimate is even requested for something that cannot be traded
-    const previews: string[] = [];
-    page.on('request', (r) => {
-      if (r.url().includes('/orders/preview')) previews.push(r.url());
-    });
-    await enterQty(page, '1');
+    // M8: the ticket is open (no "not tradable yet"): a preview is requested, and the server's answer decides
     const reason = page.getByTestId('ticket-reason');
-    await expect(reason).toContainText('not tradable yet');
+    await enterQty(page, '1');
+    await expect(reason).toContainText('enough cash'); // 1 BTC costs about 75,460 and the account has 10,000
     await expect(page.getByTestId('review-button')).toBeDisabled();
+    await enterQty(page, '0.01');
+    await expect(page.getByTestId('review-button')).toBeEnabled({ timeout: 10_000 });
+    await expect(reason).not.toContainText('not tradable yet');
     await page.locator('label:has([data-testid="side-sell"])').click();
-    await expect(reason).toContainText('not tradable yet');
-    await expect(page.getByTestId('review-button')).toBeDisabled();
-    await page.waitForTimeout(800);
-    expect(previews).toEqual([]);
-    await page.screenshot({ path: `${M7A}/crypto-instrument-1280.png`, fullPage: true });
+    await expect(reason).toContainText('You do not own any BTC-USD to sell');
+    await page.screenshot({ path: `${M8}/crypto-instrument-1280.png`, fullPage: true });
 
     const axe = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])
@@ -166,18 +163,24 @@ test.describe('crypto is display-only until M8', () => {
     );
   });
 
-  test('forced through the API a crypto order is REJECTED (INSTRUMENT_NOT_TRADABLE) and nothing moves; the stock control fills', async ({
+  test('without the MVP gate a crypto order is REJECTED (INSTRUMENT_NOT_TRADABLE) and nothing moves; the stock control fills', async ({
     page,
     context,
   }) => {
     const { email } = await register(page);
-    const btc = await placeOrder(context, {
-      symbol: 'BTC-USD',
-      side: 'BUY',
-      type: 'MARKET',
-      qty: '1',
-      referencePrice: '75460.00',
-    });
+    await control('/instrument', { symbol: 'BTC-USD', tradableIn: [] }); // the gate is data: take it away for this test
+    let btc: Record<string, unknown>;
+    try {
+      btc = await placeOrder(context, {
+        symbol: 'BTC-USD',
+        side: 'BUY',
+        type: 'MARKET',
+        qty: '0.01',
+        referencePrice: '75460.00',
+      });
+    } finally {
+      await control('/instrument', { symbol: 'BTC-USD', tradableIn: ['MVP'] });
+    }
     expect(btc).toMatchObject({ status: 'REJECTED', rejectCode: 'INSTRUMENT_NOT_TRADABLE' });
     expect(await counts(email)).toEqual({ orders: '1', executions: '0' });
     const account = await apiGet<{ cash: string }>(context, '/v1/account');
