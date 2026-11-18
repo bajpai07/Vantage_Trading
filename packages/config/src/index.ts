@@ -12,6 +12,9 @@ export const CRYPTO_FEEDS = ['off', 'sim'] as const;
 /** Simulated stock session (D-76): the real NYSE calendar, or open around the clock (SIM only). */
 export const SIM_SESSIONS = ['NYSE', 'ALWAYS_OPEN'] as const;
 
+/** The limit-order matcher worker (M8b-1, D-95): off (the default, so tests and tools never start a timer) or on. */
+export const MATCHER_MODES = ['off', 'on'] as const;
+
 export type AppEnv = (typeof APP_ENVS)[number];
 export type LogLevel = (typeof LOG_LEVELS)[number];
 export type MarketDataSource = (typeof MARKET_DATA_SOURCES)[number];
@@ -51,6 +54,12 @@ export interface Config {
    * (a maximum-size daily request costs 8), so many cheap requests or a few expensive ones both fit (in memory, per process).
    */
   readonly candlesRateLimitPerMinute: number;
+  /** D-95: whether this process runs the limit-order matcher timer (the matcher function itself is always callable). */
+  readonly matcher: (typeof MATCHER_MODES)[number];
+  /** D-95: how often the matcher wakes, in milliseconds. */
+  readonly matcherIntervalMs: number;
+  /** D-94: how many days a GTC limit order lives before it expires. */
+  readonly gtcExpiryDays: number;
   /**
    * D-69: the proxies whose X-Forwarded-For header may be believed. Empty (the default) trusts nobody: the client
    * address is the socket address.
@@ -155,6 +164,9 @@ const appSchema = z.object({
   ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
   ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'previews per user per minute'),
   CANDLES_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'candle cost points per user per minute'),
+  MATCHER: z.enum(MATCHER_MODES, { error: `must be one of: ${MATCHER_MODES.join(', ')}` }),
+  MATCHER_INTERVAL_MS: intInRange(100, 60000, 'milliseconds'),
+  GTC_EXPIRY_DAYS: intInRange(1, 365, 'days'),
   CRYPTO_FEED: z.enum(CRYPTO_FEEDS, { error: `must be one of: ${CRYPTO_FEEDS.join(', ')}` }),
   SIM_SESSION: z.enum(SIM_SESSIONS, { error: `must be one of: ${SIM_SESSIONS.join(', ')}` }),
   DEMO_MODE: z.enum(['true', 'false'], { error: 'must be true or false' }),
@@ -189,6 +201,9 @@ export function loadConfig(env: Env): Config {
     ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
     ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: env.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE ?? '60',
     CANDLES_RATE_LIMIT_PER_MINUTE: env.CANDLES_RATE_LIMIT_PER_MINUTE ?? '120',
+    MATCHER: env.MATCHER ?? 'off',
+    MATCHER_INTERVAL_MS: env.MATCHER_INTERVAL_MS ?? '1000',
+    GTC_EXPIRY_DAYS: env.GTC_EXPIRY_DAYS ?? '90',
     CRYPTO_FEED: env.CRYPTO_FEED ?? 'off',
     SIM_SESSION: env.SIM_SESSION ?? 'NYSE',
     DEMO_MODE: env.DEMO_MODE ?? 'false',
@@ -312,6 +327,9 @@ export function loadConfig(env: Env): Config {
     orderRateLimitPerMinute: app.data.ORDER_RATE_LIMIT_PER_MINUTE,
     orderPreviewRateLimitPerMinute: app.data.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE,
     candlesRateLimitPerMinute: app.data.CANDLES_RATE_LIMIT_PER_MINUTE,
+    matcher: app.data.MATCHER,
+    matcherIntervalMs: app.data.MATCHER_INTERVAL_MS,
+    gtcExpiryDays: app.data.GTC_EXPIRY_DAYS,
     trustedProxies,
   };
 }

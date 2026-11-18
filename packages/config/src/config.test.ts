@@ -334,3 +334,30 @@ describe('candle request allowance (M7b)', () => {
     }
   });
 });
+
+describe('limit-order matcher settings (M8b-1)', () => {
+  it('MATCHER defaults to off (no timer in tests and tools), accepts on, and rejects anything else', () => {
+    expect(loadConfig(buildTestEnv()).matcher).toBe('off');
+    expect(loadConfig(buildTestEnv({ MATCHER: 'on' })).matcher).toBe('on');
+    for (const v of ['yes', 'ON', 'true', '1', '']) {
+      const e = fail(buildTestEnv({ MATCHER: v }));
+      expect(e.issues.map((i) => i.name)).toContain('MATCHER');
+    }
+  });
+  it('MATCHER_INTERVAL_MS defaults to 1000 and is 100 to 60000', () => {
+    expect(loadConfig(buildTestEnv()).matcherIntervalMs).toBe(1000);
+    expect(loadConfig(buildTestEnv({ MATCHER_INTERVAL_MS: '250' })).matcherIntervalMs).toBe(250);
+    for (const v of ['99', '60001', 'fast', '1.5', '']) {
+      const e = fail(buildTestEnv({ MATCHER_INTERVAL_MS: v }));
+      expect(e.issues.map((i) => i.name)).toContain('MATCHER_INTERVAL_MS');
+    }
+  });
+  it('GTC_EXPIRY_DAYS defaults to 90 and is 1 to 365', () => {
+    expect(loadConfig(buildTestEnv()).gtcExpiryDays).toBe(90);
+    expect(loadConfig(buildTestEnv({ GTC_EXPIRY_DAYS: '30' })).gtcExpiryDays).toBe(30);
+    for (const v of ['0', '366', 'long', '1.5', '']) {
+      const e = fail(buildTestEnv({ GTC_EXPIRY_DAYS: v }));
+      expect(e.issues.map((i) => i.name)).toContain('GTC_EXPIRY_DAYS');
+    }
+  });
+});

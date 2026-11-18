@@ -43,6 +43,7 @@ import { AuditModule } from '../audit/audit.module.js';
 import { SessionGuard, SessionModule } from '../auth/session.guard.js';
 import { RateLimiter } from '../auth/rate-limiter.js';
 import { MarketDataModule } from '../market-data/market-data.module.js';
+import { MatcherService } from '../trading/matcher.service.js';
 import { OrdersService, orderNotFound } from './orders.service.js';
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -190,6 +191,7 @@ export class PositionsController {
   controllers: [OrdersController, PositionsController],
   providers: [
     OrdersService,
+    MatcherService,
     OrderRateLimitGuard,
     OrderPreviewRateLimitGuard,
     {
@@ -214,5 +216,6 @@ export class PositionsController {
     },
     { provide: ORDER_HOOKS, useValue: {} },
   ],
+  exports: [MatcherService],
 })
 export class OrdersModule {}
