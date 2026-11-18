@@ -10,6 +10,7 @@ import type { ClientBase } from 'pg';
 import {
   allocateProceeds,
   buyFillLegs,
+  collarPercentFor,
   consumeLotsFIFO,
   decideMarketOrder,
   sellFillLegs,
@@ -22,7 +23,7 @@ import type {
   RejectCode,
 } from '@vantage/engine';
 import type { Entitlement, FreshnessState, InstrumentStatus } from '@vantage/market-model';
-import { add, div, mul, parse, sub } from '@vantage/money';
+import { add, div, parse, sign, sub } from '@vantage/money';
 import { newId } from '../../ids.js';
 import { postTransaction } from '../ledger/repository.js';
 import {
@@ -64,6 +65,8 @@ export interface MarketOrderCommand {
     readonly tickSize: string;
     readonly minQty: string;
     readonly qtyStep: string;
+    /** Selects the collar (D-87: 2% for CRYPTO, 1% otherwise). Absent means the equity collar. */
+    readonly assetClass?: string;
   };
   readonly side: OrderSide;
   readonly qty: string;
@@ -189,6 +192,7 @@ export function decideForCommand(
     account: { active: state.accountActive, tradingEnabled: cmd.tradingEnabled },
     cash: state.cash,
     positionQty: state.positionQty,
+    collarPercent: collarPercentFor(cmd.instrument.assetClass),
   });
 }
 
@@ -236,10 +240,10 @@ export async function executeMarketOrder(
   const lotRows = await client.query<{
     id: string;
     qty_open: string;
-    cost_local_per_unit: string;
+    cost_remaining: string;
     opened_at: Date;
   }>(
-    `SELECT id, qty_open, cost_local_per_unit, opened_at FROM position_lots
+    `SELECT id, qty_open, cost_remaining, opened_at FROM position_lots
       WHERE account_id = $1::uuid AND instrument_id = $2::uuid AND qty_open > 0
       ORDER BY opened_at, id FOR UPDATE`,
     [cmd.accountId, cmd.instrument.id],
@@ -248,7 +252,7 @@ export async function executeMarketOrder(
     id: l.id,
     openedAt: l.opened_at,
     qtyOpen: l.qty_open,
-    costPerUnit: l.cost_local_per_unit,
+    costRemaining: l.cost_remaining,
   }));
 
   // 4. DECIDE (the engine is the only place that decides)
@@ -322,6 +326,13 @@ export async function executeMarketOrder(
       cmd.side === 'BUY'
         ? buyFillLegs({ qty: cmd.qty, price, fee })
         : sellFillLegs({ qty: cmd.qty, price, fee, basis });
+    // ONE cost number: the BUY lot's cost is the POSITION_COST leg that is posted, and a SELL's basis is the sum of the
+    // consumed lot costs (D-85). Nothing recomputes either of them.
+    const positionCostLeg = legs.find((l) => l.ledgerAccountType === 'POSITION_COST');
+    const buyCost = cmd.side === 'BUY' ? (positionCostLeg?.amount ?? '0') : '0';
+    if (cmd.side === 'BUY' && sign(parse(buyCost)) <= 0) {
+      throw new Error('a BUY lot needs a positive cost'); // unreachable: the engine rejects a zero-cost BUY first
+    }
     const posted = await postTransaction(client, {
       accountId: cmd.accountId,
       kind: 'FILL',
@@ -382,20 +393,27 @@ export async function executeMarketOrder(
     if (cmd.side === 'BUY') {
       await client.query(
         `INSERT INTO position_lots (id, account_id, instrument_id, open_execution_id, qty_initial, qty_open,
-                                    cost_local_per_unit, cost_usd_per_unit, opened_at)
-         VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $5::numeric, $6::numeric, $6::numeric, $7)`,
-        [newId(), cmd.accountId, cmd.instrument.id, executionId, cmd.qty, price, cmd.now],
+                                    cost_local_per_unit, cost_usd_per_unit, opened_at, cost_remaining)
+         VALUES ($1::uuid, $2::uuid, $3::uuid, $4::uuid, $5::numeric, $5::numeric, $6::numeric, $6::numeric, $7,
+                 $8::numeric)`,
+        [newId(), cmd.accountId, cmd.instrument.id, executionId, cmd.qty, price, cmd.now, buyCost],
       );
       remainingLots = [
-        ...openLots.map((l) => ({ qty: l.qtyOpen, cost: l.costPerUnit })),
-        { qty: cmd.qty, cost: price },
+        ...openLots.map((l) => ({ qty: l.qtyOpen, cost: l.costRemaining })),
+        { qty: cmd.qty, cost: buyCost },
       ];
     } else {
       const proceeds = allocateProceeds(notional, consumptions);
       for (const [i, c] of consumptions.entries()) {
         await client.query(
-          `UPDATE position_lots SET qty_open = $2::numeric, closed_at = $3 WHERE id = $1::uuid`,
-          [c.lotId, c.qtyOpenAfter, parse(c.qtyOpenAfter).isZero() ? cmd.now : null],
+          `UPDATE position_lots SET qty_open = $2::numeric, cost_remaining = $3::numeric, closed_at = $4
+            WHERE id = $1::uuid`,
+          [
+            c.lotId,
+            c.qtyOpenAfter,
+            c.costRemainingAfter,
+            parse(c.qtyOpenAfter).isZero() ? cmd.now : null,
+          ],
         );
         const p = proceeds[i] ?? '0';
         await client.query(
@@ -408,9 +426,10 @@ export async function executeMarketOrder(
       }
       realisedDelta = sub(parse(notional), parse(basis)).toString();
       const after = new Map(consumptions.map((c) => [c.lotId, c.qtyOpenAfter]));
+      const costAfter = new Map(consumptions.map((c) => [c.lotId, c.costRemainingAfter]));
       remainingLots = openLots.map((l) => ({
         qty: after.get(l.id) ?? l.qtyOpen,
-        cost: l.costPerUnit,
+        cost: costAfter.get(l.id) ?? l.costRemaining,
       }));
     }
 
@@ -459,13 +478,13 @@ export async function executeMarketOrder(
   }
 }
 
-/** Sum(qty x cost) / Sum(qty) over lots, 8 decimal places HALF_EVEN; 0 when no shares are left. */
+/** Sum(cost_remaining) / Sum(qty_open) over lots, 8 decimal places HALF_EVEN; 0 when no quantity is left (D-85). */
 function averageCost(lots: ReadonlyArray<{ qty: string; cost: string }>): string {
   let qty = parse('0');
   let cost = parse('0');
   for (const l of lots) {
     qty = add(qty, parse(l.qty));
-    cost = add(cost, mul(parse(l.qty), parse(l.cost)));
+    cost = add(cost, parse(l.cost));
   }
   return qty.isZero() ? '0' : div(cost, qty, 8, 'HALF_EVEN').toString();
 }

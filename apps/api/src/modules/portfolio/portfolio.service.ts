@@ -75,7 +75,7 @@ export class PortfolioService {
            FROM positions p
            JOIN instruments i ON i.id = p.instrument_id
            JOIN exchanges e ON e.id = i.exchange_id
-           LEFT JOIN (SELECT instrument_id, sum(qty_open * cost_local_per_unit) AS cost
+           LEFT JOIN (SELECT instrument_id, sum(cost_remaining) AS cost
                         FROM position_lots WHERE account_id = $1::uuid AND qty_open > 0
                        GROUP BY instrument_id) l ON l.instrument_id = p.instrument_id
           WHERE p.account_id = $1::uuid AND p.qty > 0

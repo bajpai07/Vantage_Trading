@@ -3,7 +3,7 @@
 // I5  orders.filled_qty = sum of executions.qty, FILLED = fully filled, REJECTED = nothing filled,
 //     every execution matches its order
 // I6  every execution has exactly one ledger transaction of the same account, and none is shared
-// POSITION_COST  the ledger POSITION_COST balance = sum over open lots of qty_open x cost_local_per_unit
+// POSITION_COST  the ledger POSITION_COST balance = sum over lots of cost_remaining, EXACTLY (D-85)
 // REALIZED_PNL   the ledger REALIZED_PNL balance = -(sum of lot closure trading_pnl_usd), and the positions cache agrees
 import { negate, parse } from '@vantage/money';
 import type { Queryable } from './repository.js';
@@ -32,11 +32,16 @@ export async function reconcileTrading(client: Queryable, accountId: string): Pr
   }
   const lots = await client.query<{ id: string }>(
     `SELECT id FROM position_lots
-      WHERE account_id = $1::uuid AND ((qty_open = 0) <> (closed_at IS NOT NULL) OR qty_open > qty_initial)`,
+      WHERE account_id = $1::uuid
+        AND ((qty_open = 0) <> (closed_at IS NOT NULL) OR qty_open > qty_initial OR qty_open < 0
+             OR cost_remaining < 0 OR (cost_remaining = 0) <> (qty_open = 0))`,
     [accountId],
   );
   for (const r of lots.rows)
-    add('I4', `lot ${r.id}: closed_at and qty_open disagree, or qty_open exceeds qty_initial`);
+    add(
+      'I4',
+      `lot ${r.id}: closed_at and qty_open disagree, qty_open is out of range, or cost_remaining is negative or zero only on one side`,
+    );
 
   // I5: orders against executions
   const i5 = await client.query<{
@@ -89,7 +94,7 @@ export async function reconcileTrading(client: Queryable, accountId: string): Pr
   // position cost: the ledger against the lots
   const cost = await client.query<{ ledger: string | null; lots: string }>(
     `SELECT (SELECT balance FROM ledger_accounts WHERE account_id = $1::uuid AND type = 'POSITION_COST' AND currency = 'USD') AS ledger,
-            COALESCE((SELECT SUM(qty_open * cost_local_per_unit) FROM position_lots WHERE account_id = $1::uuid), 0) AS lots`,
+            COALESCE((SELECT SUM(cost_remaining) FROM position_lots WHERE account_id = $1::uuid), 0) AS lots`,
     [accountId],
   );
   const c = cost.rows[0];
