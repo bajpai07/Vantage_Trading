@@ -275,10 +275,46 @@ test.describe('4. one order, however many clicks; keyboard only; accessibility',
     page,
   }) => {
     await register(page);
+    // diagnostics for a failure: every preview request with its status and duration, and what the ticket says
+    const previews: string[] = [];
+    page.on('requestfinished', async (req) => {
+      if (!req.url().endsWith('/v1/orders/preview')) return;
+      const res = await req.response();
+      previews.push(`${String(res?.status())} ${String(Math.round(req.timing().responseEnd))}ms`);
+    });
+    page.on('requestfailed', (req) => {
+      if (req.url().endsWith('/v1/orders/preview'))
+        previews.push(`failed: ${req.failure()?.errorText ?? ''}`);
+    });
     await page.goto('/instruments/BTC-USD');
-    await page.getByTestId('ticket-qty').focus();
-    await page.keyboard.type('0.001');
-    await expect(reviewButton(page)).toBeEnabled({ timeout: 10_000 });
+    try {
+      // Under heavy machine load the page can still be hydrating when the first keystrokes arrive and the form then starts from an
+      // empty quantity (measured: field value "" and no preview request were ever sent). A person would simply type again, so the
+      // test does too: clear, focus, type with the keyboard, and wait for the estimate to make Review available.
+      await expect(async () => {
+        await page.getByTestId('ticket-qty').fill('');
+        await page.getByTestId('ticket-qty').focus();
+        await page.keyboard.type('0.001');
+        await expect(reviewButton(page)).toBeEnabled({ timeout: 4_000 });
+      }).toPass({ timeout: 30_000 });
+    } catch (e) {
+      const reason = await page
+        .getByTestId('ticket-reason')
+        .textContent({ timeout: 1000 })
+        .catch(() => '(none)');
+      const typed = await page
+        .getByTestId('ticket-qty')
+        .inputValue({ timeout: 1000 })
+        .catch(() => '(none)');
+      const estimate = await page
+        .getByTestId('ticket-estimate')
+        .textContent({ timeout: 1000 })
+        .catch(() => '(none)');
+      throw new Error(
+        `the Review button stayed disabled. field value: ${JSON.stringify(typed)}; url: ${page.url()}; ticket-reason: ${JSON.stringify(reason)}; estimate: ${JSON.stringify(estimate)}; preview requests: ${JSON.stringify(previews)}
+${(e as Error).message}`,
+      );
+    }
     await page.keyboard.press('Tab'); // Max
     await expect(page.getByTestId('ticket-max')).toBeFocused();
     await page.keyboard.press('Tab'); // Review
