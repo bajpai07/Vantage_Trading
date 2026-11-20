@@ -369,9 +369,34 @@ describe('M8b-1 property: limit and market orders, moves, cancels and expiries e
 `);
     expect(seen.rests).toBeGreaterThan(10);
     expect(seen.acceptFills + seen.moveFills).toBeGreaterThan(10);
-    expect(seen.cancels).toBeGreaterThan(0);
     expect(seen.rejects).toBeGreaterThan(0);
   }, 900_000);
+
+  it('a scripted run covers every path: rest, cancel, expire (lazy and by job), fill on a move, fill at accept, rejects', async () => {
+    const base = { spreadTicks: 10n, short: false, pick: 0 };
+    const at = (bidTicks: bigint) => ({ bidTicks, ...base });
+    const ops: Op[] = [
+      { kind: 'LB', qty: 1_000_000n, limitOffset: -100n, ...at(9_000_000n) }, // rests below the market
+      { kind: 'LS', qty: 1_000_000n, limitOffset: 100n, ...at(9_000_000n) }, // INSUFFICIENT_POSITION (nothing owned)
+      { kind: 'CANCEL', qty: 1n, limitOffset: 0n, ...at(9_000_000n) }, // cancels the resting BUY
+      { kind: 'MB', qty: 2_000_000n, limitOffset: 0n, ...at(9_000_000n) }, // own some BTC
+      { kind: 'LS', qty: 1_000_000n, limitOffset: 100n, ...at(9_000_000n) }, // SELL rests (reserves quantity)
+      {
+        kind: 'LB',
+        qty: 1_000_000n,
+        limitOffset: -100n,
+        short: true,
+        bidTicks: 9_000_000n,
+        spreadTicks: 10n,
+        pick: 0,
+      }, // short-lived
+      { kind: 'EXPIRE', qty: 1n, limitOffset: 0n, ...at(9_000_000n) }, // 3 minutes have not passed yet: SKIPPED or EXPIRED per the clock
+      { kind: 'MOVE', qty: 1n, limitOffset: 0n, ...at(9_020_000n) }, // the market rises: the SELL fills, the BUY expires
+      { kind: 'LB', qty: 1_000_000n, limitOffset: 500n, ...at(9_000_000n) }, // marketable at accept: fills at once
+      { kind: 'LB', qty: 29_000_000n, limitOffset: 0n, ...at(9_000_000n) }, // INSUFFICIENT_BUYING_POWER
+    ];
+    expect(await play(ops, false)).toBeNull();
+  }, 120_000);
 
   it('control: a model whose reserve forgets the commission is caught by the same comparison', async () => {
     // a resting limit BUY then a MOVE: any run with a resting BUY differs in RESERVED or CASH immediately
