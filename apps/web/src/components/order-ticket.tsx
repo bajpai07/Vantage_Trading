@@ -52,6 +52,16 @@ export function OrderTicket(props: {
   pricePick?: { readonly price: string; readonly seq: number } | null;
   /** The b / s shortcuts (D-106): switch the side. UI state only; ignored while the review dialog is open. */
   sideCommand?: { readonly side: Side; readonly seq: number } | null;
+  /** The phone sheet (M9b): switch Market / Limit (a tap on a book price opens the ticket in Limit mode). UI state only. */
+  kindCommand?: { readonly kind: OrderKind; readonly seq: number } | null;
+  /** The phone sheet (M9b, D-108): read-only status, so the sheet knows when an order is being sent (it cannot be closed then). */
+  onPhaseChange?: (s: { readonly phase: string; readonly outcome: string | null }) => void;
+  /**
+   * Phone sheet (M9b, D-108): dismissing the review dialog (Esc) after an UNCERTAIN outcome ("Retry safely") only HIDES it: the attempt
+   * and its idempotency key are kept, and `reopenSignal` shows it again. An explicit Cancel button still discards, as before.
+   */
+  keepAttemptOnDismiss?: boolean;
+  reopenSignal?: number;
   /** The order result is on screen: the book re-reads the caller's own orders. */
   onSettled?: () => void;
 }) {
@@ -62,6 +72,7 @@ export function OrderTicket(props: {
   const requestSeq = useRef(0);
   const inflight = useRef(false);
   const dialogRef = useRef<HTMLDialogElement | null>(null);
+  const [dialogHidden, setDialogHidden] = useState(false);
   const headingRef = useRef<HTMLHeadingElement | null>(null);
   const [cashNow, setCashNow] = useState<string | null | 'error'>(null);
 
@@ -237,15 +248,33 @@ export function OrderTicket(props: {
   useEffect(() => {
     const d = dialogRef.current;
     if (d === null) return;
-    if (t.phase !== 'idle' && !d.open) d.showModal();
-    if (t.phase === 'idle' && d.open) d.close();
-    if (t.phase !== 'idle') {
+    if (t.phase !== 'idle' && !dialogHidden && !d.open) d.showModal();
+    if ((t.phase === 'idle' || dialogHidden) && d.open) d.close();
+    if (t.phase !== 'idle' && !dialogHidden) {
       const id = setTimeout(() => headingRef.current?.focus(), 0);
       return () => clearTimeout(id);
     }
-  }, [t.phase, t.outcome?.kind]);
+  }, [t.phase, t.outcome?.kind, dialogHidden]);
+  useEffect(() => {
+    if (t.phase === 'idle') setDialogHidden(false);
+  }, [t.phase]);
+  const { reopenSignal, keepAttemptOnDismiss } = props;
+  useEffect(() => {
+    if (reopenSignal !== undefined && reopenSignal > 0) setDialogHidden(false);
+  }, [reopenSignal]);
 
-  const { onKindChange, onSettled, pricePick, sideCommand } = props;
+  const { onKindChange, onSettled, pricePick, sideCommand, kindCommand, onPhaseChange } = props;
+  const lastKind = useRef(0);
+  useEffect(() => {
+    if (kindCommand === null || kindCommand === undefined || kindCommand.seq === lastKind.current)
+      return;
+    lastKind.current = kindCommand.seq;
+    if (t.phase === 'idle') dispatch({ type: 'setKind', kind: kindCommand.kind });
+  }, [kindCommand, t.phase]);
+  const outcomeKind = t.outcome?.kind ?? null;
+  useEffect(() => {
+    onPhaseChange?.({ phase: t.phase, outcome: outcomeKind });
+  }, [t.phase, outcomeKind, onPhaseChange]);
   const lastSide = useRef(0);
   useEffect(() => {
     if (sideCommand === null || sideCommand === undefined || sideCommand.seq === lastSide.current)
@@ -262,9 +291,9 @@ export function OrderTicket(props: {
   const lastPick = useRef(0);
   useEffect(() => {
     if (pricePick === null || pricePick === undefined || pricePick.seq === lastPick.current) return;
+    if (t.kind !== 'LIMIT') return; // applied as soon as the ticket is in Limit mode (the phone switches it first)
     lastPick.current = pricePick.seq;
-    if (t.kind === 'LIMIT')
-      dispatch({ type: 'setLimitPrice', limitPrice: sanitizeLimitPrice(pricePick.price) });
+    dispatch({ type: 'setLimitPrice', limitPrice: sanitizeLimitPrice(pricePick.price) });
   }, [pricePick, t.kind]);
 
   // after a fill, ask the API for the cash balance now (a string, as received)
@@ -635,8 +664,11 @@ export function OrderTicket(props: {
         data-testid="ticket-dialog"
         onCancel={(e) => {
           e.preventDefault(); // Escape never leaves a half-state: it is handled here
-          if (t.phase === 'review') dispatch({ type: 'cancelReview' });
-          else if (t.phase === 'done') closeDone();
+          if (t.phase === 'review') {
+            if (keepAttemptOnDismiss === true && t.outcome?.kind === 'retryable')
+              setDialogHidden(true);
+            else dispatch({ type: 'cancelReview' });
+          } else if (t.phase === 'done') closeDone();
         }}
         className="m-auto w-[min(92vw,440px)] rounded-lg border border-line-strong bg-bg-1 p-4 text-text-1 backdrop:bg-bg-0/80"
       >

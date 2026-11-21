@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_API_BASE_URL,
+  DEFAULT_ORDERS_POLL_MS,
   DEFAULT_POLL_MS,
   DEFAULT_QUOTE_POLL_MS,
   WebConfigError,
@@ -24,9 +25,11 @@ describe('loadWebConfig', () => {
       apiBaseUrl: DEFAULT_API_BASE_URL,
       portfolioPollMs: DEFAULT_POLL_MS,
       quotePollMs: DEFAULT_QUOTE_POLL_MS,
+      ordersPollMs: DEFAULT_ORDERS_POLL_MS,
       trustForwardedFor: true,
     });
     expect(DEFAULT_POLL_MS).toBe(15_000);
+    expect(DEFAULT_ORDERS_POLL_MS).toBe(10_000); // M9b: was a fixed 3 s
   });
 
   it('reads explicit values', () => {
@@ -36,14 +39,24 @@ describe('loadWebConfig', () => {
         API_BASE_URL: 'http://localhost:4100',
         PORTFOLIO_POLL_MS: '2000',
         QUOTE_POLL_MS: '1500',
+        ORDERS_POLL_MS: '3000',
       }),
     ).toEqual({
       appEnv: 'test',
       apiBaseUrl: 'http://localhost:4100',
       portfolioPollMs: 2000,
       quotePollMs: 1500,
+      ordersPollMs: 3000,
       trustForwardedFor: true,
     });
+  });
+
+  it('ORDERS_POLL_MS is a bounded whole number of milliseconds (controls: the bounds load)', () => {
+    expect(loadWebConfig({ ORDERS_POLL_MS: '1000' }).ordersPollMs).toBe(1000);
+    expect(loadWebConfig({ ORDERS_POLL_MS: '300000' }).ordersPollMs).toBe(300_000);
+    for (const v of ['999', '300001', 'often', '10.5', '']) {
+      expect(fail({ ORDERS_POLL_MS: v }).issues.map((i) => i.name)).toContain('ORDERS_POLL_MS');
+    }
   });
 
   it('staging and production must name the API explicitly (control: with it they load)', () => {

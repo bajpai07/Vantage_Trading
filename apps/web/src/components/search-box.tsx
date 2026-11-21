@@ -161,7 +161,7 @@ export function SearchBox() {
           if (!e.currentTarget.parentElement?.contains(e.relatedTarget)) setOpen(false);
         }}
         onKeyDown={onKeyDown}
-        className={`${inputClass} py-1.5 text-[13px]`}
+        className={`${inputClass} py-1.5 text-[16px] md:text-[13px]`}
         data-testid="search-input"
       />
       <div aria-live="polite" className="sr-only" data-testid="search-status">

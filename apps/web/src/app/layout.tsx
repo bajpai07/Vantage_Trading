@@ -10,7 +10,13 @@ export const metadata: Metadata = {
   title: { default: 'VANTAGE', template: '%s · VANTAGE' },
   description: 'A virtual-money trading simulator. Not a brokerage.',
 };
-export const viewport: Viewport = { colorScheme: 'dark' };
+// M9b (D-109): the page fills the whole phone screen (safe-area insets are used by the fixed bars); pinch-zoom stays allowed
+export const viewport: Viewport = {
+  colorScheme: 'dark',
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+};
 
 // Every page depends on the session and on the live data source, and the CSP nonce is per request.
 export const dynamic = 'force-dynamic';

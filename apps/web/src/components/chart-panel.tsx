@@ -29,7 +29,7 @@ function ChartSkeleton() {
     <div
       data-testid="chart-skeleton"
       aria-hidden="true"
-      className="h-[440px] rounded-md bg-bg-2 motion-safe:animate-pulse"
+      className="h-[clamp(220px,38dvh,320px)] rounded-md bg-bg-2 motion-safe:animate-pulse md:h-[440px]"
     />
   );
 }
@@ -117,6 +117,7 @@ export function ChartPanel(props: {
   const [data, setData] = useState<Data>({ kind: 'loading' });
   const [attempt, setAttempt] = useState(0);
   const [hover, setHover] = useState<number | null>(null);
+  const [pinned, setPinned] = useState<number | null>(null); // a tapped candle (touch screens have no hover)
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const live = LIVE.has(quote.freshness);
   const drawable = live || quote.freshness === 'CLOSED';
@@ -127,6 +128,7 @@ export function ChartPanel(props: {
     const controller = new AbortController();
     setData({ kind: 'loading' });
     setHover(null);
+    setPinned(null);
     void clientGet(
       `/v1/market/candles?symbol=${encodeURIComponent(symbol)}&interval=${interval}&limit=${String(FIRST_LIMIT)}`,
       CandlesResponse,
@@ -196,8 +198,8 @@ export function ChartPanel(props: {
   const series = useMemo(() => (data.kind === 'ready' ? toPlotSeries(data.items) : null), [data]);
   const items = data.kind === 'ready' ? data.items : [];
   const lastCandle = items[items.length - 1];
-  const shown =
-    hover !== null && series !== null ? (series.byTime.get(hover) ?? lastCandle) : lastCandle;
+  const at = hover ?? pinned;
+  const shown = at !== null && series !== null ? (series.byTime.get(at) ?? lastCandle) : lastCandle;
   const lastPrice = lastCandle?.c ?? quote.last;
   const summary = `Candlestick chart of ${symbol}, ${interval} candles, simulated data${
     lastPrice === undefined ? '' : `, last price ${formatPrice(lastPrice)}`
@@ -222,9 +224,27 @@ export function ChartPanel(props: {
     tabRefs.current[to]?.focus();
   }
 
+  // the selected tab is scrolled into view (the tab strip scrolls sideways on a phone); not on the first render
+  const first = useRef(true);
+  useEffect(() => {
+    if (first.current) {
+      first.current = false;
+      return;
+    }
+    tabRefs.current[CANDLE_INTERVALS.indexOf(interval)]?.scrollIntoView({
+      inline: 'nearest',
+      block: 'nearest',
+    });
+  }, [interval]);
+
   return (
     <div data-testid="chart-panel" data-interval={interval}>
-      <div role="tablist" aria-label="Candle interval" className="mb-2 flex flex-wrap gap-1.5">
+      <div
+        role="tablist"
+        aria-label="Candle interval"
+        data-testid="interval-tabs"
+        className="mb-2 flex snap-x gap-1.5 overflow-x-auto md:flex-wrap md:overflow-visible"
+      >
         {CANDLE_INTERVALS.map((iv, i) => {
           const selected = iv === interval;
           return (
@@ -242,7 +262,7 @@ export function ChartPanel(props: {
               tabIndex={selected ? 0 : -1}
               onClick={() => props.onIntervalChange(iv)}
               onKeyDown={(e) => onTabKey(e, i)}
-              className={`rounded-md px-3 py-1.5 text-[13px] ${
+              className={`shrink-0 snap-start rounded-md px-3 py-1.5 text-[13px] max-md:min-h-11 max-md:min-w-12 ${
                 selected
                   ? 'bg-bg-4 font-semibold text-text-0'
                   : 'text-text-2 hover:bg-bg-3 hover:text-text-0'
@@ -259,13 +279,13 @@ export function ChartPanel(props: {
         role="tabpanel"
         aria-labelledby={`${uid}-tab-${interval}`}
         tabIndex={-1}
-        className="min-h-[440px] rounded-md border border-line bg-bg-1"
+        className="min-h-[clamp(220px,38dvh,320px)] rounded-md border border-line bg-bg-1 md:min-h-[440px]"
       >
         {!drawable ? (
           <div
             role="status"
             data-testid="chart-unavailable"
-            className="min-h-[440px] flex items-center justify-center px-6 text-center text-[13px] text-text-1"
+            className="min-h-[clamp(220px,38dvh,320px)] md:min-h-[440px] flex items-center justify-center px-6 text-center text-[13px] text-text-1"
           >
             {quote.freshness === 'STALE'
               ? 'Chart unavailable: quote is stale.'
@@ -277,14 +297,14 @@ export function ChartPanel(props: {
           <div
             role="status"
             data-testid="chart-no-candles"
-            className="min-h-[440px] flex items-center justify-center px-6 text-center text-[13px] text-text-1"
+            className="min-h-[clamp(220px,38dvh,320px)] md:min-h-[440px] flex items-center justify-center px-6 text-center text-[13px] text-text-1"
           >
             No candles are available for this instrument.
           </div>
         ) : data.kind === 'error' ? (
           <div
             data-testid="chart-error"
-            className="min-h-[440px] flex flex-col items-center justify-center gap-3 px-6"
+            className="min-h-[clamp(220px,38dvh,320px)] md:min-h-[440px] flex flex-col items-center justify-center gap-3 px-6"
           >
             <Alert kind="info">The chart could not be loaded.</Alert>
             <button
@@ -318,6 +338,7 @@ export function ChartPanel(props: {
                 tickSize={instrument.tickSize}
                 showVolume
                 onHover={setHover}
+                onSelect={setPinned}
               />
             )}
             <div className="sr-only">

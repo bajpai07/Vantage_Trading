@@ -76,6 +76,7 @@ export default async function InstrumentPage({ params }: { params: Promise<{ sym
       }
       orders={orders.ok ? orders.data.orders : null}
       quotePollMs={getWebConfig().quotePollMs}
+      ordersPollMs={getWebConfig().ordersPollMs}
     />
   );
 }

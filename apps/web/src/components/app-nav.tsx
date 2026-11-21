@@ -20,7 +20,7 @@ export function AppNav() {
   return (
     <nav
       aria-label="Primary"
-      className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg-1 md:static md:z-auto md:border-t-0 md:bg-transparent"
+      className="fixed inset-x-0 bottom-0 z-30 flex border-t border-line bg-bg-1 pb-[env(safe-area-inset-bottom)] md:static md:pb-0 md:z-auto md:border-t-0 md:bg-transparent"
     >
       <ul className="flex w-full md:w-auto md:gap-1">
         {NAV_ITEMS.map((item) => {

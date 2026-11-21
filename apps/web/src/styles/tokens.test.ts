@@ -150,3 +150,13 @@ describe('the lint rule rejects raw hex in components (ESLint, the real config)'
     expect(await lint(code, 'apps/web/src/components/x.tsx')).toEqual([]);
   });
 });
+
+describe('M9b pairs: the phone action bar and sheet', () => {
+  it.each([['buy'], ['sell']])('the action bar text (--text-0) on --%s is at least 4.5:1', (bg) => {
+    expect(contrast(token('text-0'), token(bg))).toBeGreaterThanOrEqual(4.5);
+  });
+  it('the sheet (--bg-2) carries --text-1 and --text-0 text', () => {
+    expect(contrast(token('text-0'), token('bg-2'))).toBeGreaterThanOrEqual(4.5);
+    expect(contrast(token('text-1'), token('bg-2'))).toBeGreaterThanOrEqual(4.5);
+  });
+});

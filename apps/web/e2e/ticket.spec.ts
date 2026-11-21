@@ -602,6 +602,8 @@ test.describe('10. accessibility and the keyboard', () => {
     await page.setViewportSize({ width: 375, height: 800 });
     await register(page);
     await page.goto('/instruments/AAPL');
+    // M9b (D-108): below 768 px the ticket is a bottom sheet, opened from the Buy button of the action bar
+    await page.getByTestId('action-buy').click();
     await readyToReview(page, '10');
     const overflow = await page.evaluate(
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,

@@ -36,6 +36,8 @@ export interface PriceChartProps {
   readonly showVolume: boolean;
   /** The candle time under the crosshair (epoch seconds), or null when the pointer leaves the chart. */
   readonly onHover: (time: number | null) => void;
+  /** A tap or click on a candle (epoch seconds), or null when the tap is on empty space. */
+  readonly onSelect: (time: number | null) => void;
 }
 
 interface Handles {
@@ -50,6 +52,8 @@ export default function PriceChart(props: PriceChartProps) {
   const shown = useRef<{ key: string; count: number } | null>(null);
   const onHover = useRef(props.onHover);
   onHover.current = props.onHover;
+  const onSelect = useRef(props.onSelect);
+  onSelect.current = props.onSelect;
 
   // created once per mount, removed on unmount
   useEffect(() => {
@@ -72,6 +76,8 @@ export default function PriceChart(props: PriceChartProps) {
         horzLines: { color: cssVar('--chart-grid') },
       },
       crosshair: { mode: CrosshairMode.Normal },
+      // M9b: a vertical swipe that starts on the chart must scroll the PAGE; a horizontal drag pans the chart, pinch zooms it
+      handleScroll: { vertTouchDrag: false },
       rightPriceScale: { borderColor: cssVar('--line') },
       timeScale: { borderColor: cssVar('--line'), timeVisible: true, secondsVisible: false },
       localization: { priceFormatter: (p: number) => axisLabel(p, decimals) },
@@ -100,10 +106,15 @@ export default function PriceChart(props: PriceChartProps) {
     const move = (p: MouseEventParams): void => {
       onHover.current(typeof p.time === 'number' ? p.time : null);
     };
+    const click = (p: MouseEventParams): void => {
+      onSelect.current(typeof p.time === 'number' ? p.time : null);
+    };
     chart.subscribeCrosshairMove(move);
+    chart.subscribeClick(click);
     handles.current = { chart, candles, volume };
     return () => {
       chart.unsubscribeCrosshairMove(move);
+      chart.unsubscribeClick(click);
       chart.remove();
       handles.current = null;
       shown.current = null;
@@ -147,5 +158,11 @@ export default function PriceChart(props: PriceChartProps) {
     shown.current = { key: props.dataKey, count: candles.length };
   }, [props.series, props.dataKey]);
 
-  return <div ref={host} data-testid="price-chart-canvas" className="h-[440px]" />;
+  return (
+    <div
+      ref={host}
+      data-testid="price-chart-canvas"
+      className="h-[clamp(220px,38dvh,320px)] md:h-[440px]"
+    />
+  );
 }

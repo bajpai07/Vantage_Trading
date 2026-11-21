@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type {
   CandleInterval,
   InstrumentItem,
@@ -11,7 +11,7 @@ import type {
   QuoteItem,
 } from '@vantage/contracts';
 import { formatUtcShort } from '../lib/format';
-import { formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
+import { DASH, formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
 import {
@@ -23,6 +23,7 @@ import {
   stepInterval,
 } from '../lib/shortcuts';
 import { useDepthPoll } from '../lib/use-depth-poll';
+import { useIsPhone } from '../lib/use-is-phone';
 import { useWatchlist } from '../lib/use-watchlist';
 import { useQuotePoll } from '../lib/use-quote-poll';
 import type { OrderKind } from '../lib/ticket';
@@ -30,6 +31,8 @@ import { BottomPanel } from './bottom-panel';
 import { ChartPanel } from './chart-panel';
 import { DepthBook } from './depth-book';
 import { OrderTicket } from './order-ticket';
+import { FullScreenDrawer, PhoneActionBar } from './phone-parts';
+import { TicketSheet } from './ticket-sheet';
 import { ShortcutsHelp } from './shortcuts-help';
 import { QuotePanel } from './quote-panel';
 import { usePortfolio } from './terminal-chrome';
@@ -60,9 +63,12 @@ export function StatusBadge({ status }: { status: InstrumentItem['status'] }) {
 function PositionPanel({
   symbol,
   position,
+  buyingPower,
 }: {
   symbol: string;
   position: PositionResponse | null | undefined;
+  /** The free cash, a string from the portfolio endpoint (null when it could not be read). */
+  buyingPower: string | null;
 }) {
   return (
     <section aria-labelledby="position-title" data-testid="position-panel">
@@ -97,6 +103,12 @@ function PositionPanel({
           </dd>
         </dl>
       )}
+      <dl className="num mt-3 grid max-w-xs grid-cols-[auto_1fr] gap-x-4 gap-y-1 border-t border-line pt-2 text-[13px]">
+        <dt className="text-text-2">Buying power</dt>
+        <dd className="text-right text-text-0" data-testid="buying-power">
+          {buyingPower === null ? DASH : '$' + formatMoney(buyingPower)}
+        </dd>
+      </dl>
     </section>
   );
 }
@@ -175,19 +187,81 @@ export function InstrumentView(props: {
   position: PositionResponse | null | undefined;
   orders: readonly OrderResponse[] | null;
   quotePollMs: number;
+  ordersPollMs: number;
 }) {
   const { instrument } = props;
   const poll = useQuotePoll(instrument.symbol, props.initialQuote, props.quotePollMs);
-  const depth = useDepthPoll(instrument.symbol, props.quotePollMs);
+  const isPhone = useIsPhone();
+  // the phone book starts with 8 levels ("Show more" asks for 15, then 25); a wider screen uses the API default
+  const [phoneLevels, setPhoneLevels] = useState(8);
+  const depth = useDepthPoll(
+    instrument.symbol,
+    props.quotePollMs,
+    isPhone === true ? phoneLevels : undefined,
+  );
   const watchlist = useWatchlist();
   const portfolio = usePortfolio();
   const [ticketKind, setTicketKind] = useState<OrderKind>('MARKET');
   const [interval, setInterval] = useState<CandleInterval>('15m');
   const [sideCmd, setSideCmd] = useState<{ side: 'BUY' | 'SELL'; seq: number } | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [kindCmd, setKindCmd] = useState<{ kind: OrderKind; seq: number } | null>(null);
+  const [sheetOpen, setSheetOpen] = useState(false);
+  const [reopen, setReopen] = useState(0);
+  const [watchOpen, setWatchOpen] = useState(false);
+  const [ticketPhase, setTicketPhase] = useState<{ phase: string; outcome: string | null }>({
+    phase: 'idle',
+    outcome: null,
+  });
+  const opener = useRef<HTMLElement | null>(null);
+  const wasDone = useRef(false);
+  const [ordersRefresh, setOrdersRefresh] = useState(0);
   const [shortcutsOn, setShortcutsOn] = useState(true);
   const [pick, setPick] = useState<{ price: string; seq: number } | null>(null);
   const sv = statusView(instrument.status);
+
+  // the phone sheet: it cannot be closed while an order is being sent; after the result is closed it closes too
+  const locked = ticketPhase.phase === 'submitting';
+  const closeSheet = useCallback((): void => {
+    setSheetOpen(false);
+    const el = opener.current;
+    if (el !== null) setTimeout(() => el.focus(), 0); // focus returns to the control that opened the sheet
+  }, []);
+  useEffect(() => {
+    if (ticketPhase.phase === 'done') wasDone.current = true;
+    else if (ticketPhase.phase === 'idle' && wasDone.current) {
+      wasDone.current = false;
+      if (sheetOpen) closeSheet();
+    }
+  }, [ticketPhase.phase, sheetOpen, closeSheet]);
+
+  const bookNode = (
+    <DepthBook
+      symbol={instrument.symbol}
+      state={depth.state}
+      canPick={isPhone === true || ticketKind === 'LIMIT'}
+      onPick={(price) => {
+        setPick((p) => ({ price, seq: (p?.seq ?? 0) + 1 }));
+        if (isPhone === true) {
+          setKindCmd((c) => ({ kind: 'LIMIT', seq: (c?.seq ?? 0) + 1 }));
+          opener.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+          setSheetOpen(true);
+        }
+      }}
+      onShowMore={
+        isPhone === true && phoneLevels < 25
+          ? () => setPhoneLevels((n) => (n < 15 ? 15 : 25))
+          : undefined
+      }
+    />
+  );
+  const openSheet = (side: 'BUY' | 'SELL', from: HTMLElement): void => {
+    opener.current = from;
+    setSideCmd((c) => ({ side, seq: (c?.seq ?? 0) + 1 }));
+    setReopen((n) => n + 1); // an uncertain order that was dismissed shows "Retry safely" again
+    setSheetOpen(true);
+  };
 
   // the saved on/off choice of the shortcuts (this browser only)
   useEffect(() => {
@@ -237,14 +311,16 @@ export function InstrumentView(props: {
         <aside
           aria-label="Watchlist"
           data-testid="terminal-rail"
-          className="order-3 border-line bg-bg-1 lg:order-none lg:row-span-2 lg:border-r xl:row-span-1"
+          className="order-3 border-line bg-bg-1 max-md:hidden lg:order-none lg:row-span-2 lg:border-r xl:row-span-1"
         >
-          <WatchlistRail
-            current={instrument.symbol}
-            currentName={instrument.name}
-            pollMs={props.quotePollMs}
-            watchlist={watchlist}
-          />
+          {isPhone === true ? null : (
+            <WatchlistRail
+              current={instrument.symbol}
+              currentName={instrument.name}
+              pollMs={props.quotePollMs}
+              watchlist={watchlist}
+            />
+          )}
         </aside>
         <section
           aria-label="Chart"
@@ -265,9 +341,17 @@ export function InstrumentView(props: {
               data-testid="shortcuts-open"
               onClick={() => setHelpOpen(true)}
               aria-label="Keyboard shortcuts"
-              className="num rounded-md border border-line-strong px-2 py-0.5 text-[12px] text-text-1 hover:bg-bg-3"
+              className="num rounded-md border border-line-strong px-2 py-0.5 text-[12px] text-text-1 hover:bg-bg-3 max-md:hidden"
             >
               ?
+            </button>
+            <button
+              type="button"
+              data-testid="watchlist-open"
+              onClick={() => setWatchOpen(true)}
+              className="inline-flex min-h-11 items-center rounded-md border border-line-strong px-3 text-[13px] text-text-0 md:hidden"
+            >
+              Watchlist
             </button>
             <WatchStar
               symbol={instrument.symbol}
@@ -302,32 +386,61 @@ export function InstrumentView(props: {
           data-testid="terminal-right"
           className="order-2 grid min-w-0 gap-4 border-line bg-bg-1 px-4 py-4 lg:order-none lg:col-start-2 lg:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1 xl:border-l xl:px-5"
         >
-          <OrderTicket
-            instrument={instrument}
-            quote={poll.quote}
-            refreshFailed={poll.refreshFailed}
-            refreshQuote={poll.refreshNow}
-            position={props.position}
-            onKindChange={setTicketKind}
-            pricePick={pick}
-            sideCommand={sideCmd}
-            onSettled={() => {
-              depth.refreshNow();
-              portfolio.refreshNow();
-            }}
-          />
-          <div className="space-y-4">
-            <PositionPanel symbol={instrument.symbol} position={props.position} />
-            <DepthBook
-              symbol={instrument.symbol}
-              state={depth.state}
-              canPick={ticketKind === 'LIMIT'}
-              onPick={(price) => setPick((p) => ({ price, seq: (p?.seq ?? 0) + 1 }))}
+          <TicketSheet open={sheetOpen} locked={locked} onClose={closeSheet}>
+            <OrderTicket
+              instrument={instrument}
+              quote={poll.quote}
+              refreshFailed={poll.refreshFailed}
+              refreshQuote={poll.refreshNow}
+              position={props.position}
+              onKindChange={setTicketKind}
+              pricePick={pick}
+              sideCommand={sideCmd}
+              kindCommand={kindCmd}
+              onPhaseChange={setTicketPhase}
+              keepAttemptOnDismiss={isPhone === true}
+              reopenSignal={reopen}
+              onSettled={() => {
+                depth.refreshNow();
+                portfolio.refreshNow();
+                setOrdersRefresh((n) => n + 1);
+              }}
             />
+          </TicketSheet>
+          <div className="space-y-4">
+            <PositionPanel
+              symbol={instrument.symbol}
+              position={props.position}
+              buyingPower={portfolio.data === null ? null : portfolio.data.cash}
+            />
+            {isPhone === true ? null : bookNode}
           </div>
         </aside>
       </div>
-      <BottomPanel current={instrument.symbol} />
+      <BottomPanel
+        current={instrument.symbol}
+        ordersPollMs={props.ordersPollMs}
+        refreshSignal={ordersRefresh}
+        bookPanel={isPhone === true ? bookNode : undefined}
+      />
+      <PhoneActionBar onBuy={(el) => openSheet('BUY', el)} onSell={(el) => openSheet('SELL', el)} />
+      <FullScreenDrawer
+        open={watchOpen && isPhone === true}
+        onClose={() => setWatchOpen(false)}
+        title="Watchlist"
+        testId="watchlist-drawer"
+      >
+        {watchOpen && isPhone === true ? (
+          <WatchlistRail
+            current={instrument.symbol}
+            currentName={instrument.name}
+            pollMs={props.quotePollMs}
+            watchlist={watchlist}
+            full
+            onSelect={() => setWatchOpen(false)}
+          />
+        ) : null}
+      </FullScreenDrawer>
       <ShortcutsHelp
         open={helpOpen}
         onClose={() => setHelpOpen(false)}

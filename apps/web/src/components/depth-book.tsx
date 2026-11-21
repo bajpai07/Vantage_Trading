@@ -173,11 +173,14 @@ export function DepthBook({
   state,
   canPick,
   onPick,
+  onShowMore,
 }: {
   symbol: string;
   state: DepthState;
   canPick: boolean;
   onPick: (price: string) => void;
+  /** The phone shows 8 levels at first: this asks for more (absent when there is nothing more to show). */
+  onShowMore?: (() => void) | undefined;
 }) {
   return (
     <section
@@ -212,6 +215,16 @@ export function DepthBook({
             canPick={canPick}
             onPick={onPick}
           />
+          {onShowMore === undefined ? null : (
+            <button
+              type="button"
+              data-testid="depth-show-more"
+              onClick={onShowMore}
+              className="mt-2 inline-flex min-h-11 w-full items-center justify-center rounded-md border border-line-strong bg-bg-2 text-[13px] font-medium text-text-0"
+            >
+              Show more levels
+            </button>
+          )}
         </div>
       )}
     </section>

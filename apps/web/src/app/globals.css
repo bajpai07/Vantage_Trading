@@ -93,6 +93,18 @@ li a:not([class]) {
   top: 8px;
 }
 
+/* The phone sheet and drawer slide in with a CSS transition, only when the user has not asked for less motion (M9b, D-109). */
+@media (prefers-reduced-motion: no-preference) {
+  .sheet-anim {
+    transition: transform 220ms ease-out;
+  }
+  .sheet-anim[data-open='false'] {
+    transition:
+      transform 220ms ease-out,
+      visibility 0s linear 220ms;
+  }
+}
+
 /* Motion only confirms a change, and never when the user asked for less of it. */
 @media (prefers-reduced-motion: reduce) {
   *,

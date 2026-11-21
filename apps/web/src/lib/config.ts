@@ -9,6 +9,8 @@ export type AppEnv = (typeof APP_ENVS)[number];
 export const DEFAULT_API_BASE_URL = 'http://127.0.0.1:4000';
 export const DEFAULT_POLL_MS = 15_000;
 export const DEFAULT_QUOTE_POLL_MS = 5_000;
+/** The orders lists (open orders, history) look for matcher fills and expiries this often (M9b T0b). */
+export const DEFAULT_ORDERS_POLL_MS = 10_000;
 
 export interface WebConfig {
   readonly appEnv: AppEnv;
@@ -18,6 +20,8 @@ export interface WebConfig {
   readonly portfolioPollMs: number;
   /** How often the open instrument's quote is refreshed while the tab is visible (D-73). */
   readonly quotePollMs: number;
+  /** How often the orders lists refresh while the tab is visible (they also refresh after an order is placed or cancelled). */
+  readonly ordersPollMs: number;
   /**
    * D-69: pass the X-Forwarded-For header Next provides on to the API (so the API can see the real client address when it
    * trusts this server). Set it only when this app runs behind a reverse proxy you control that appends the peer
@@ -68,6 +72,13 @@ const schema = z.object({
     .refine((n) => n >= 1000 && n <= 60_000, {
       error: 'must be a whole number of milliseconds from 1000 to 60000',
     }),
+  ORDERS_POLL_MS: z
+    .string()
+    .regex(/^[0-9]{4,6}$/, { error: 'must be a whole number of milliseconds from 1000 to 300000' })
+    .transform((v) => parseInt(v, 10))
+    .refine((n) => n >= 1000 && n <= 300_000, {
+      error: 'must be a whole number of milliseconds from 1000 to 300000',
+    }),
   TRUST_FORWARDED_FOR: z.enum(['true', 'false'], { error: 'must be true or false' }),
 });
 
@@ -93,6 +104,7 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
     API_BASE_URL: env.API_BASE_URL ?? DEFAULT_API_BASE_URL,
     PORTFOLIO_POLL_MS: env.PORTFOLIO_POLL_MS ?? String(DEFAULT_POLL_MS),
     QUOTE_POLL_MS: env.QUOTE_POLL_MS ?? String(DEFAULT_QUOTE_POLL_MS),
+    ORDERS_POLL_MS: env.ORDERS_POLL_MS ?? String(DEFAULT_ORDERS_POLL_MS),
     TRUST_FORWARDED_FOR: env.TRUST_FORWARDED_FOR ?? 'true',
   });
   if (!parsed.success) {
@@ -106,6 +118,7 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
     apiBaseUrl: parsed.data.API_BASE_URL,
     portfolioPollMs: parsed.data.PORTFOLIO_POLL_MS,
     quotePollMs: parsed.data.QUOTE_POLL_MS,
+    ordersPollMs: parsed.data.ORDERS_POLL_MS,
     trustForwardedFor: parsed.data.TRUST_FORWARDED_FOR === 'true',
   };
 }

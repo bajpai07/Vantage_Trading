@@ -73,7 +73,13 @@ export function WatchlistRail({
   currentName,
   pollMs,
   watchlist,
+  full: fullLayout = false,
+  onSelect,
 }: {
+  /** Show names, prices and stars at every width (the phone drawer). */
+  full?: boolean;
+  /** A row was chosen (the phone drawer closes). */
+  onSelect?: () => void;
   current: string;
   currentName: string;
   pollMs: number;
@@ -91,7 +97,10 @@ export function WatchlistRail({
     <div data-testid="watchlist" className="flex h-full flex-col py-4">
       <div className="flex items-baseline justify-between px-3 pb-2 xl:px-4">
         <h2 className="text-[13px] font-semibold text-text-0">Watchlist</h2>
-        <span className="hidden text-[12px] text-text-2 xl:inline" data-testid="watch-saved-note">
+        <span
+          className={`${fullLayout ? '' : 'hidden xl:inline'} text-[12px] text-text-2`}
+          data-testid="watch-saved-note"
+        >
           {saved ? 'Saved in this browser' : 'Not saved (browser storage is blocked)'}
         </span>
       </div>
@@ -125,19 +134,22 @@ export function WatchlistRail({
                   href={`/instruments/${encodeURIComponent(symbol)}`}
                   aria-current={selected ? 'page' : undefined}
                   data-testid="watch-link"
+                  {...(onSelect === undefined ? {} : { onClick: onSelect })}
                   className="flex min-h-[56px] min-w-0 flex-1 items-center justify-between gap-2 px-2 py-2 text-text-0 hover:text-text-0 xl:px-3"
                 >
                   <span className="flex min-w-0 items-center gap-2">
                     {quote === undefined ? null : <FreshnessDot state={quote.freshness} />}
                     <span className="min-w-0">
                       <span className="block truncate font-semibold text-text-0">{symbol}</span>
-                      <span className="hidden truncate text-[12px] text-text-2 xl:block">
+                      <span
+                        className={`${fullLayout ? 'block' : 'hidden xl:block'} truncate text-[12px] text-text-2`}
+                      >
                         {name ?? ''}
                         {quote?.changeBasis === 'ROLLING_24H' ? ' · 24h' : ''}
                       </span>
                     </span>
                   </span>
-                  <span className="hidden text-right xl:block">
+                  <span className={`${fullLayout ? 'block' : 'hidden xl:block'} text-right`}>
                     {quote === undefined ? (
                       <span
                         className="num text-text-2"
@@ -171,7 +183,7 @@ export function WatchlistRail({
                   symbol={symbol}
                   on
                   onToggle={() => toggle(symbol)}
-                  className="mr-1 hidden xl:inline-flex"
+                  className={`mr-1 ${fullLayout ? 'inline-flex' : 'hidden xl:inline-flex'}`}
                 />
               </li>
             );
@@ -184,7 +196,10 @@ export function WatchlistRail({
         </div>
       ) : null}
       {loaded && !state.symbols.includes(current) ? (
-        <div className="mt-2 hidden px-4 xl:block" data-testid="watch-add-current">
+        <div
+          className={`mt-2 px-4 ${fullLayout ? 'block' : 'hidden xl:block'}`}
+          data-testid="watch-add-current"
+        >
           <button
             type="button"
             disabled={full}

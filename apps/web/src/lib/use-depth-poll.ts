@@ -23,7 +23,7 @@ export interface DepthPoll {
   readonly refreshNow: () => void;
 }
 
-export function useDepthPoll(symbol: string, pollMs: number): DepthPoll {
+export function useDepthPoll(symbol: string, pollMs: number, levels?: number): DepthPoll {
   const [state, setState] = useState<DepthState>({ kind: 'loading' });
   const refreshRef = useRef<() => void>(() => undefined);
 
@@ -33,7 +33,7 @@ export function useDepthPoll(symbol: string, pollMs: number): DepthPoll {
     let inflight = false;
     let failures = 0;
     let controller: AbortController | undefined;
-    const q = `symbol=${encodeURIComponent(symbol)}`;
+    const q = `symbol=${encodeURIComponent(symbol)}${levels === undefined ? '' : `&levels=${String(levels)}`}`;
 
     async function cycle(): Promise<void> {
       if (inflight || cancelled) return;
@@ -82,7 +82,7 @@ export function useDepthPoll(symbol: string, pollMs: number): DepthPoll {
       controller?.abort();
       document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, [symbol, pollMs]);
+  }, [symbol, pollMs, levels]);
 
   // stable identity: a consumer may use it as an effect dependency
   const refreshNow = useCallback(() => refreshRef.current(), []);

@@ -119,6 +119,7 @@ test.describe('2. the mock: header, copy and honesty', () => {
       page.getByText('Virtual money, not real trading', { exact: true }).first(),
     ).toBeVisible();
     await expect(page.getByTestId('header-equity')).toHaveText('$10,000.00');
+    await expect(page.getByTestId('buying-power')).toHaveText('$10,000.00'); // M9b: the free cash, a server string, next to "You hold"
     await expect(page.getByRole('link', { name: 'Trade' })).toHaveAttribute('aria-current', 'page');
     await expect(page.getByTestId('quote-last')).toHaveText('90,000.00');
     await expect(page.getByTestId('quote-bid')).toHaveText('89,990.00');
@@ -755,5 +756,45 @@ test.describe('10. performance (reported, not gates): JS loaded, chart chunk siz
     const term = await measure('/instruments/BTC-USD', 'chart-ready');
     process.stdout.write(`TERMINAL_PERF ${JSON.stringify(term)}\n`);
     expect(term.cls).toBeLessThan(0.25);
+  });
+});
+
+test.describe('11. the orders lists poll politely (M9b T0b)', () => {
+  test('every ORDERS_POLL_MS while visible (3 s in e2e, 10 s by default), paused while the tab is hidden, refreshed at once when it returns, never two at a time', async ({
+    page,
+  }) => {
+    await register(page);
+    let inFlight = 0;
+    let maxInFlight = 0;
+    const times: number[] = [];
+    await page.route('**/api/v1/orders?limit=50', async (route) => {
+      inFlight += 1;
+      maxInFlight = maxInFlight > inFlight ? maxInFlight : inFlight;
+      times.push(Date.now());
+      await new Promise((r) => setTimeout(r, 300));
+      inFlight -= 1;
+      await route.continue();
+    });
+    await open(page);
+    await expect(page.getByTestId('bottom-tab-open')).toHaveText('Open orders (0)', {
+      timeout: 15_000,
+    });
+    await expect.poll(() => times.length, { timeout: 20_000 }).toBeGreaterThanOrEqual(3); // it keeps polling
+    expect(maxInFlight).toBe(1);
+    // hidden: nothing for more than two intervals
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: true, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await page.waitForTimeout(700); // a request already started may finish
+    const before = times.length;
+    await page.waitForTimeout(7000);
+    expect(times.length).toBe(before);
+    // visible again: an immediate refresh
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { value: false, configurable: true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await expect.poll(() => times.length, { timeout: 2000 }).toBeGreaterThan(before);
   });
 });

@@ -31,7 +31,25 @@ export default defineConfig({
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },
-  projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
+  // M9b: the desktop project never runs the phone spec; the phone project (touch emulation, several viewports set inside the spec)
+  // runs only it, and only in the default profile
+  projects: [
+    {
+      name: 'chromium',
+      // a project-level testIgnore replaces the top-level one, so always-open is repeated here
+      testIgnore: ALT ? /phone.spec.ts/ : [/phone.spec.ts/, /always-open.spec.ts/],
+      use: { ...devices['Desktop Chrome'] },
+    },
+    ...(ALT
+      ? []
+      : [
+          {
+            name: 'phone',
+            testMatch: /phone.spec.ts/,
+            use: { ...devices['Pixel 7'] },
+          },
+        ]),
+  ],
   // The production build, served as in production. API_BASE_URL is read at request time (the proxy route).
   webServer: {
     command: `pnpm exec next start -p ${String(WEB_PORT)}`,
@@ -43,6 +61,7 @@ export default defineConfig({
       APP_ENV: 'test',
       PORTFOLIO_POLL_MS: String(POLL_MS),
       QUOTE_POLL_MS: '1000',
+      ORDERS_POLL_MS: '3000', // production default 10 s; tests look for matcher fills quickly
       TRUST_FORWARDED_FOR: 'true',
     },
   },

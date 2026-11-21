@@ -53,8 +53,8 @@ export function TerminalChrome(props: {
   const poll = usePortfolioPoll(props.initialPortfolio, props.pollMs);
   return (
     <PortfolioContext.Provider value={poll}>
-      <header className="sticky top-[var(--banner-h)] z-20 border-b border-line bg-bg-1">
-        <div className="flex min-h-14 flex-wrap items-center gap-x-6 gap-y-2 px-4 py-2 lg:px-6">
+      <header className="border-b border-line bg-bg-1 md:sticky md:top-[var(--banner-h)] md:z-20">
+        <div className="flex min-h-12 flex-wrap items-center justify-between gap-x-6 gap-y-2 px-4 py-2 md:min-h-14 md:justify-start lg:px-6">
           <Link
             href="/portfolio"
             aria-label="VANTAGE, go to portfolio"

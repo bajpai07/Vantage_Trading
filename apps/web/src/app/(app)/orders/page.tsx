@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation';
 import { ListOrdersResponse } from '@vantage/contracts';
 import { LoadError } from '../../../components/load-error';
 import { OrdersList } from '../../../components/orders-list';
+import { getWebConfig } from '../../../lib/config';
 import { serverGet } from '../../../lib/server-api';
 
 export const metadata: Metadata = { title: 'Orders' };
@@ -25,7 +26,7 @@ export default async function OrdersPage() {
       <h1 id="orders-title" className="mb-3 text-[20px] font-semibold leading-[26px] text-text-0">
         Orders
       </h1>
-      <OrdersList initial={orders.data} open={open.data} />
+      <OrdersList initial={orders.data} open={open.data} pollMs={getWebConfig().ordersPollMs} />
     </section>
   );
 }

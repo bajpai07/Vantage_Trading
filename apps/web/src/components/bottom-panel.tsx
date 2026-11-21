@@ -6,6 +6,8 @@
 // counts are server data. Selecting a position row switches the terminal to that instrument.
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import type { ReactNode } from 'react';
+import { useIsPhone } from '../lib/use-is-phone';
 import { ListOrdersResponse } from '@vantage/contracts';
 import type { PortfolioPosition } from '@vantage/contracts';
 import { clientGet } from '../lib/client-api';
@@ -15,8 +17,9 @@ import { PnlCell } from './money';
 import { usePortfolio } from './terminal-chrome';
 import { Alert, EmptyState, secondaryButtonClass } from './ui';
 
-type Tab = 'positions' | 'open' | 'history';
-const TABS: readonly Tab[] = ['positions', 'open', 'history'];
+type Tab = 'book' | 'positions' | 'open' | 'history';
+const DESKTOP_TABS: readonly Tab[] = ['positions', 'open', 'history'];
+const PHONE_TABS: readonly Tab[] = ['book', 'positions', 'open', 'history'];
 const TH = 'whitespace-nowrap px-2 py-1.5 text-[12px] font-medium text-text-2';
 
 function PositionsTable({
@@ -110,9 +113,13 @@ function PositionsTable({
 function OrdersTabs({
   view,
   onOpenCount,
+  pollMs,
+  refreshSignal,
 }: {
   view: 'open' | 'history';
   onOpenCount: (n: number) => void;
+  pollMs: number;
+  refreshSignal: number;
 }) {
   const [data, setData] = useState<
     { all: ListOrdersResponse; open: ListOrdersResponse } | 'error' | null
@@ -151,22 +158,57 @@ function OrdersTabs({
         </button>
       </div>
     );
-  return <OrdersList initial={data.all} open={data.open} view={view} onOpenCount={onOpenCount} />;
+  return (
+    <OrdersList
+      initial={data.all}
+      open={data.open}
+      view={view}
+      onOpenCount={onOpenCount}
+      pollMs={pollMs}
+      refreshSignal={refreshSignal}
+    />
+  );
 }
 
-export function BottomPanel({ current }: { current: string }) {
+export function BottomPanel({
+  current,
+  ordersPollMs,
+  refreshSignal,
+  bookPanel,
+}: {
+  current: string;
+  ordersPollMs: number;
+  /** Bumped when an order was placed: the orders lists refresh at once. */
+  refreshSignal: number;
+  /** The depth book, shown as the first tab of the phone's segmented control (absent on a wider screen, where it sits by the ticket). */
+  bookPanel?: ReactNode;
+}) {
   const router = useRouter();
   const uid = useId();
   const portfolio = usePortfolio();
+  const phone = useIsPhone() === true;
+  const TABS = phone ? PHONE_TABS : DESKTOP_TABS;
   const [tab, setTab] = useState<Tab>('positions');
+  const chosen = useRef(false);
+  // the phone starts on the Book; a wider screen has no Book tab
+  useEffect(() => {
+    if (phone && !chosen.current) setTab('book');
+    if (!phone && tab === 'book') setTab('positions');
+  }, [phone, tab]);
   const [openCount, setOpenCount] = useState<number | null>(null);
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const positions = portfolio.data?.positions ?? [];
   const onOpenCount = useCallback((n: number) => setOpenCount(n), []);
 
   const labels: Record<Tab, string> = {
+    book: 'Book',
     positions: portfolio.data === null ? 'Positions' : `Positions (${String(positions.length)})`,
-    open: openCount === null ? 'Open orders' : `Open orders (${String(openCount)})`,
+    open:
+      openCount === null
+        ? phone
+          ? 'Orders'
+          : 'Open orders'
+        : `${phone ? 'Orders' : 'Open orders'} (${String(openCount)})`,
     history: 'History',
   };
 
@@ -176,6 +218,7 @@ export function BottomPanel({ current }: { current: string }) {
       e.key === 'ArrowRight' ? (index + 1) % n : e.key === 'ArrowLeft' ? (index + n - 1) % n : -1;
     if (to < 0) return;
     e.preventDefault();
+    chosen.current = true;
     setTab(TABS[to] as Tab);
     tabRefs.current[to]?.focus();
   }
@@ -189,7 +232,7 @@ export function BottomPanel({ current }: { current: string }) {
       <div
         role="tablist"
         aria-label="Positions and orders"
-        className="mb-3 flex gap-5 font-semibold"
+        className={`mb-3 flex font-semibold ${phone ? 'gap-1 rounded-lg border border-line bg-bg-2 p-1' : 'gap-5'}`}
       >
         {TABS.map((t, i) => (
           <button
@@ -202,20 +245,44 @@ export function BottomPanel({ current }: { current: string }) {
             id={`${uid}-${t}`}
             data-testid={`bottom-tab-${t}`}
             aria-selected={tab === t}
-            aria-controls={t === 'positions' ? `${uid}-panel-positions` : `${uid}-panel-orders`}
+            aria-controls={
+              t === 'book'
+                ? `${uid}-panel-book`
+                : t === 'positions'
+                  ? `${uid}-panel-positions`
+                  : `${uid}-panel-orders`
+            }
             tabIndex={tab === t ? 0 : -1}
-            onClick={() => setTab(t)}
+            onClick={() => {
+              chosen.current = true;
+              setTab(t);
+            }}
             onKeyDown={(e) => onKey(e, i)}
-            className={`border-b-2 pb-1.5 text-[13px] ${
-              tab === t
-                ? 'border-accent text-text-0'
-                : 'border-transparent text-text-2 hover:text-text-0'
-            }`}
+            className={
+              phone
+                ? `min-h-11 flex-1 rounded-md px-1 text-[13px] ${tab === t ? 'bg-bg-4 text-text-0' : 'text-text-2'}`
+                : `border-b-2 pb-1.5 text-[13px] ${
+                    tab === t
+                      ? 'border-accent text-text-0'
+                      : 'border-transparent text-text-2 hover:text-text-0'
+                  }`
+            }
           >
             {labels[t]}
           </button>
         ))}
       </div>
+      {phone ? (
+        <div
+          role="tabpanel"
+          id={`${uid}-panel-book`}
+          aria-labelledby={`${uid}-book`}
+          hidden={tab !== 'book'}
+          data-testid="bottom-panel-book"
+        >
+          {bookPanel}
+        </div>
+      ) : null}
       <div
         role="tabpanel"
         id={`${uid}-panel-positions`}
@@ -245,10 +312,15 @@ export function BottomPanel({ current }: { current: string }) {
         role="tabpanel"
         id={`${uid}-panel-orders`}
         aria-labelledby={`${uid}-${tab === 'history' ? 'history' : 'open'}`}
-        hidden={tab === 'positions'}
+        hidden={tab === 'positions' || tab === 'book'}
         data-testid={tab === 'history' ? 'bottom-panel-history' : 'bottom-panel-open'}
       >
-        <OrdersTabs view={tab === 'history' ? 'history' : 'open'} onOpenCount={onOpenCount} />
+        <OrdersTabs
+          view={tab === 'history' ? 'history' : 'open'}
+          onOpenCount={onOpenCount}
+          pollMs={ordersPollMs}
+          refreshSignal={refreshSignal}
+        />
       </div>
     </section>
   );

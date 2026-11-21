@@ -21,8 +21,6 @@ const pick = (r: ListOrdersResponse): Page<OrderResponse> => ({
 });
 
 const TH = 'whitespace-nowrap px-2 py-1.5 text-left text-[12px] font-medium text-text-2';
-/** How often the lists look for changes made by the matcher (a fill, an expiry) while the page is open. */
-const ORDERS_POLL_MS = 3000;
 
 function StatusChip({ status }: { status: OrderResponse['status'] }) {
   const c = STATUS_CHIPS[status];
@@ -45,6 +43,8 @@ export function OrdersList({
   open,
   view = 'all',
   onOpenCount,
+  pollMs,
+  refreshSignal,
 }: {
   initial: ListOrdersResponse;
   open: ListOrdersResponse;
@@ -52,6 +52,10 @@ export function OrdersList({
   view?: 'all' | 'open' | 'history';
   /** Reports how many orders are open (for a tab label); called when the count changes. */
   onOpenCount?: (count: number) => void;
+  /** The refresh interval while the tab is visible (ORDERS_POLL_MS). */
+  pollMs: number;
+  /** Bump this number to refresh at once (the ticket does after an order is placed). */
+  refreshSignal?: number;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -69,27 +73,66 @@ export function OrdersList({
   const attempts = useRef(new Map<string, string>());
   const inflight = useRef(new Set<string>());
 
-  // look for what the matcher did (fills, expiries) while the page is open
+  // look for what the matcher did (fills, expiries) while the page is open: every `pollMs` while the tab is visible (paused while it
+  // is hidden, refreshed at once when it returns), one cycle in flight at a time, aborted on unmount. A refresh is also requested
+  // right after the user places or cancels an order (`refreshSignal`, and the Cancel button itself).
+  const refreshRef = useRef<() => void>(() => undefined);
   useEffect(() => {
     let stopped = false;
-    const tick = async (): Promise<void> => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let inflight = false;
+    let again = false; // a refresh was asked for while one was running
+    let controller: AbortController | undefined;
+    async function tick(): Promise<void> {
+      if (stopped) return;
+      if (inflight) {
+        again = true;
+        return;
+      }
+      inflight = true;
+      controller = new AbortController();
       const [a, b] = await Promise.all([
-        clientGet('/v1/orders?limit=50', ListOrdersResponse),
-        clientGet('/v1/orders?status=open&limit=100', ListOrdersResponse),
+        clientGet('/v1/orders?limit=50', ListOrdersResponse, controller.signal),
+        clientGet('/v1/orders?status=open&limit=100', ListOrdersResponse, controller.signal),
       ]);
+      inflight = false;
       if (stopped) return;
       if (a.ok) {
         setHead(a.data.orders);
         setUpdated({});
       }
       if (b.ok) setOpenOrders(b.data.orders);
+      if (again) {
+        again = false;
+        void tick();
+        return;
+      }
+      schedule();
+    }
+    function schedule(): void {
+      if (stopped || document.hidden) return;
+      clearTimeout(timer);
+      timer = setTimeout(() => void tick(), pollMs);
+    }
+    const onVisibility = (): void => {
+      if (document.hidden) {
+        clearTimeout(timer);
+        timer = undefined;
+      } else void tick();
     };
-    const id = setInterval(() => void tick(), ORDERS_POLL_MS);
+    refreshRef.current = () => void tick();
+    schedule();
+    document.addEventListener('visibilitychange', onVisibility);
     return () => {
       stopped = true;
-      clearInterval(id);
+      clearTimeout(timer);
+      controller?.abort();
+      document.removeEventListener('visibilitychange', onVisibility);
     };
-  }, []);
+  }, [pollMs]);
+  useEffect(() => {
+    if (refreshSignal !== undefined && refreshSignal > 0) refreshRef.current();
+  }, [refreshSignal]);
 
   const openCount = openOrders.length;
   useEffect(() => {
@@ -116,6 +159,7 @@ export function OrdersList({
         text: r.data.released ? releasedSentence(r.data.released, o.symbol) : 'Cancelled.',
       });
       router.refresh();
+      refreshRef.current(); // the lists change at once, not at the next poll
       return;
     }
     if (r.kind === 'unauthenticated') {

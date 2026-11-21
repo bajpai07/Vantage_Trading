@@ -3,7 +3,7 @@ import type { ReactNode } from 'react';
 /** Shared form and feedback primitives. Colours come only from the design tokens (Tailwind theme). */
 
 export const inputClass =
-  'block w-full rounded-md border border-line bg-bg-2 px-3 py-2 text-[14px] leading-5 text-text-0 placeholder:text-text-2 aria-[invalid=true]:border-down disabled:opacity-60';
+  'block w-full rounded-md border border-line bg-bg-2 px-3 py-2 text-[16px] leading-5 text-text-0 placeholder:text-text-2 aria-[invalid=true]:border-down disabled:opacity-60 md:text-[14px]';
 
 export const primaryButtonClass =
   'inline-flex min-h-11 items-center justify-center rounded-md bg-accent px-4 py-2 text-[14px] font-semibold text-bg-0 hover:bg-accent-hi disabled:cursor-not-allowed disabled:opacity-60 md:min-h-9';
