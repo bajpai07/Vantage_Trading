@@ -10,3 +10,5 @@ docs/prompts
 next-env.d.ts
 test-results
 playwright-report
+THIRD_PARTY_NOTICES.md
+apps/web/src/lib/third-party-notices.ts

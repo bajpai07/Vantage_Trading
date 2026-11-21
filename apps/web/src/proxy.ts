@@ -10,6 +10,8 @@ import { getWebConfig } from './lib/config';
 
 const SESSION_COOKIE = 'vantage_session';
 const AUTH_PAGES = new Set(['/login', '/register']);
+/** Pages anyone may read, signed in or not (the licence notices of the chart library, D-103). */
+const PUBLIC_PAGES = new Set(['/third-party-notices']);
 
 async function hasValidSession(request: NextRequest): Promise<boolean> {
   const token = request.cookies.get(SESSION_COOKIE)?.value;
@@ -34,7 +36,7 @@ export async function proxy(request: NextRequest): Promise<NextResponse> {
   let response: NextResponse;
   if (pathname === '/') {
     response = NextResponse.redirect(new URL(authed ? '/portfolio' : '/login', request.url));
-  } else if (!authed && !isAuthPage) {
+  } else if (!authed && !isAuthPage && !PUBLIC_PAGES.has(pathname)) {
     response = NextResponse.redirect(new URL('/login', request.url));
   } else if (authed && isAuthPage) {
     response = NextResponse.redirect(new URL('/portfolio', request.url));

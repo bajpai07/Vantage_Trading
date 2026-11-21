@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type {
   CandleInterval,
   InstrumentItem,
@@ -14,6 +14,14 @@ import { formatUtcShort } from '../lib/format';
 import { formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
+import {
+  browserStorageOrNull,
+  loadShortcutsEnabled,
+  resolveShortcut,
+  saveShortcutsEnabled,
+  stepIndex,
+  stepInterval,
+} from '../lib/shortcuts';
 import { useDepthPoll } from '../lib/use-depth-poll';
 import { useWatchlist } from '../lib/use-watchlist';
 import { useQuotePoll } from '../lib/use-quote-poll';
@@ -22,6 +30,7 @@ import { BottomPanel } from './bottom-panel';
 import { ChartPanel } from './chart-panel';
 import { DepthBook } from './depth-book';
 import { OrderTicket } from './order-ticket';
+import { ShortcutsHelp } from './shortcuts-help';
 import { QuotePanel } from './quote-panel';
 import { usePortfolio } from './terminal-chrome';
 import { WatchlistRail, WatchStar } from './watchlist-rail';
@@ -174,8 +183,49 @@ export function InstrumentView(props: {
   const portfolio = usePortfolio();
   const [ticketKind, setTicketKind] = useState<OrderKind>('MARKET');
   const [interval, setInterval] = useState<CandleInterval>('15m');
+  const [sideCmd, setSideCmd] = useState<{ side: 'BUY' | 'SELL'; seq: number } | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
+  const [shortcutsOn, setShortcutsOn] = useState(true);
   const [pick, setPick] = useState<{ price: string; seq: number } | null>(null);
   const sv = statusView(instrument.status);
+
+  // the saved on/off choice of the shortcuts (this browser only)
+  useEffect(() => {
+    setShortcutsOn(loadShortcutsEnabled(browserStorageOrNull()));
+  }, []);
+
+  // keyboard shortcuts (D-106): UI state only, never an order; inactive while typing and while a dialog is open
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent): void => {
+      const action = resolveShortcut(e, e.target as HTMLElement | null, {
+        enabled: shortcutsOn,
+        dialogOpen: helpOpen || document.querySelector('dialog[open]') !== null,
+      });
+      if (action === null) return;
+      if (action.type === 'side')
+        setSideCmd((c) => ({ side: action.side, seq: (c?.seq ?? 0) + 1 }));
+      else if (action.type === 'interval') setInterval((i) => stepInterval(i, action.delta));
+      else if (action.type === 'help') setHelpOpen(true);
+      else {
+        const links = [...document.querySelectorAll<HTMLElement>('[data-testid="watch-link"]')];
+        if (links.length === 0) return;
+        const at = links.findIndex((l) => l === document.activeElement);
+        const from =
+          at >= 0 ? at : links.findIndex((l) => l.getAttribute('aria-current') === 'page');
+        const next = stepIndex(from, action.delta, links.length);
+        links[next]?.focus();
+      }
+      e.preventDefault();
+    };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [shortcutsOn, helpOpen]);
+
+  // the page title follows the price: "AAPL 195.00 · VANTAGE" (the title is not a live region: nothing is announced)
+  const last = poll.quote.last;
+  useEffect(() => {
+    document.title = `${instrument.symbol}${last === undefined ? '' : ` ${formatPrice(last)}`} · VANTAGE`;
+  }, [instrument.symbol, last]);
   return (
     <div data-testid="instrument-page" data-symbol={instrument.symbol}>
       {sv.explanation === null ? null : (
@@ -210,6 +260,15 @@ export function InstrumentView(props: {
                 {instrument.name}
               </span>
             </h1>
+            <button
+              type="button"
+              data-testid="shortcuts-open"
+              onClick={() => setHelpOpen(true)}
+              aria-label="Keyboard shortcuts"
+              className="num rounded-md border border-line-strong px-2 py-0.5 text-[12px] text-text-1 hover:bg-bg-3"
+            >
+              ?
+            </button>
             <WatchStar
               symbol={instrument.symbol}
               on={watchlist.state.symbols.includes(instrument.symbol)}
@@ -251,6 +310,7 @@ export function InstrumentView(props: {
             position={props.position}
             onKindChange={setTicketKind}
             pricePick={pick}
+            sideCommand={sideCmd}
             onSettled={() => {
               depth.refreshNow();
               portfolio.refreshNow();
@@ -268,6 +328,15 @@ export function InstrumentView(props: {
         </aside>
       </div>
       <BottomPanel current={instrument.symbol} />
+      <ShortcutsHelp
+        open={helpOpen}
+        onClose={() => setHelpOpen(false)}
+        enabled={shortcutsOn}
+        onEnabledChange={(on) => {
+          setShortcutsOn(on);
+          saveShortcutsEnabled(browserStorageOrNull(), on);
+        }}
+      />
     </div>
   );
 }

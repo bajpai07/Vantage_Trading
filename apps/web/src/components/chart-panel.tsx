@@ -11,6 +11,7 @@ import { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { CANDLE_INTERVALS, CandlesResponse } from '@vantage/contracts';
 import type { CandleInterval, CandleItem, InstrumentItem, QuoteItem } from '@vantage/contracts';
 import { toPlotSeries } from '../lib/chart-data';
+import { mergeCandles } from '../lib/candles-merge';
 import { clientGet } from '../lib/client-api';
 import { formatUtc } from '../lib/format';
 import { DASH, formatPrice, formatQty } from '../lib/money';
@@ -21,7 +22,6 @@ export const CHART_HEIGHT = 440;
 /** The forming candle is refreshed this often while the tab is visible (bounded: at most 12 requests a minute). */
 export const REFRESH_MS = 5000;
 const FIRST_LIMIT = 200;
-const KEEP_MAX = 400;
 const A11Y_ROWS = 8;
 
 function ChartSkeleton() {
@@ -47,20 +47,6 @@ type Data =
       readonly synthetic: boolean;
       readonly source: string;
     };
-
-/** Merges the latest candles into the list: a known open time is replaced (the forming candle), a newer one is appended. */
-export function mergeCandles(
-  current: readonly CandleItem[],
-  latest: readonly CandleItem[],
-): CandleItem[] {
-  const out = [...current];
-  for (const c of latest) {
-    const at = out.findIndex((x) => x.t === c.t);
-    if (at >= 0) out[at] = c;
-    else if (out.length === 0 || c.t > (out[out.length - 1] as CandleItem).t) out.push(c);
-  }
-  return out.length > KEEP_MAX ? out.slice(out.length - KEEP_MAX) : out;
-}
 
 const LIVE = new Set(['REAL_TIME', 'DELAYED']);
 
@@ -373,7 +359,15 @@ export function ChartPanel(props: {
         never change.{' '}
         <span data-testid="chart-axis-note">
           Axis labels are rounded; exact prices in the legend.
-        </span>
+        </span>{' '}
+        <a
+          href="https://www.tradingview.com/"
+          data-testid="chart-attribution"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Charts by TradingView
+        </a>
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import type { FeedInfoResponse } from '@vantage/contracts';
 
 /**
@@ -17,7 +18,10 @@ export function Footer({ feed }: { feed?: FeedInfoResponse | null }) {
           {' '}
           This is a demo: prices are simulated and nothing here is real.
         </span>
-      ) : null}
+      ) : null}{' '}
+      <Link href="/third-party-notices" data-testid="notices-link">
+        Third-party notices
+      </Link>
     </footer>
   );
 }

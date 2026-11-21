@@ -6,7 +6,7 @@
 //   * colours are read from the design tokens (CSS variables), never written here;
 //   * the library's numbers come from lib/chart-data.ts only and are used to position pixels; every text the user reads (legend,
 //     last price, header) is the exact server string, looked up by candle time by the parent;
-//   * the TradingView attribution link stays enabled (the licence requires it).
+//   * the in-chart TradingView logo is off (CSP, see below); the attribution link and notice are shown elsewhere on the page.
 // This file is loaded dynamically, on the instrument page only (see chart-panel.tsx).
 import {
   CandlestickSeries,
@@ -62,7 +62,10 @@ export default function PriceChart(props: PriceChartProps) {
         background: { type: ColorType.Solid, color: cssVar('--bg-1') },
         textColor: cssVar('--text-2'),
         fontFamily: cssVar('--font-num'),
-        attributionLogo: true,
+        // OFF by decision (D-103 amendment): the library's logo widget injects an inline <style> element, which our nonce-only
+        // style-src blocks (measured: 2 violations on, 0 off). The attribution is given in the chart footer, in the footer of every
+        // page and on /third-party-notices instead.
+        attributionLogo: false,
       },
       grid: {
         vertLines: { color: cssVar('--chart-grid') },

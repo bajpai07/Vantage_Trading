@@ -238,11 +238,11 @@ export default tseslint.config(
       'no-restricted-syntax': [
         'error',
         {
-          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\b/]',
+          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\\b/]',
           message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
         },
         {
-          selector: 'TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\b/]',
+          selector: 'TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\\b/]',
           message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
         },
         {

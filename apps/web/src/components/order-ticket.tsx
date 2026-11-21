@@ -50,6 +50,8 @@ export function OrderTicket(props: {
   onKindChange?: (kind: OrderKind) => void;
   /** A price clicked in the book: copied as a STRING into the limit price when the ticket is in Limit mode. */
   pricePick?: { readonly price: string; readonly seq: number } | null;
+  /** The b / s shortcuts (D-106): switch the side. UI state only; ignored while the review dialog is open. */
+  sideCommand?: { readonly side: Side; readonly seq: number } | null;
   /** The order result is on screen: the book re-reads the caller's own orders. */
   onSettled?: () => void;
 }) {
@@ -243,7 +245,14 @@ export function OrderTicket(props: {
     }
   }, [t.phase, t.outcome?.kind]);
 
-  const { onKindChange, onSettled, pricePick } = props;
+  const { onKindChange, onSettled, pricePick, sideCommand } = props;
+  const lastSide = useRef(0);
+  useEffect(() => {
+    if (sideCommand === null || sideCommand === undefined || sideCommand.seq === lastSide.current)
+      return;
+    lastSide.current = sideCommand.seq;
+    if (t.phase === 'idle') dispatch({ type: 'setSide', side: sideCommand.side });
+  }, [sideCommand, t.phase]);
   useEffect(() => {
     onKindChange?.(t.kind);
   }, [t.kind, onKindChange]);
