@@ -700,6 +700,8 @@ test.describe('10. performance (reported, not gates): JS loaded, chart chunk siz
     page,
   }) => {
     await register(page);
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send('Network.setCacheDisabled', { cacheDisabled: true }); // every chunk is fetched, none from the cache
     const measure = async (path: string, ready: string) => {
       let total = 0;
       const chunks: Array<{ url: string; bytes: number; chart: boolean }> = [];
