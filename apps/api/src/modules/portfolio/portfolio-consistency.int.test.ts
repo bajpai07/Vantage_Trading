@@ -218,55 +218,97 @@ describe('4. consistency: reads while orders are placed concurrently (D-63)', ()
     expect(inside.every((s) => s.startsWith('SELECT'))).toBe(true);
   });
 
-  it('100 portfolio reads while 60 orders are placed in parallel: every response satisfies cash + costBasis + fees - realisedPnl = 10,000 and adds up internally', async () => {
+  it('100+ portfolio reads while 60 orders are placed in parallel (released in 5 waves while the reader runs): every response satisfies cash + costBasis + fees - realisedPnl = 10,000 and adds up internally', async () => {
     await setQuote(h, 'AAPL', '99.98', '100.00');
     const u = await newUser(h, db, 'conc');
     // seed a position so sells are possible, then a mixed parallel load of buys and sells
     for (let i = 0; i < 3; i += 1)
       await placeOrder(h, u, newKey(), { ...BUY_AAPL, qty: '5', referencePrice: '100.00' });
-    const orders = Array.from({ length: 60 }, (_, i) =>
-      placeOrder(
-        h,
-        u,
-        newKey(),
+
+    // FORCED INTERLEAVING (M9b T0a). The reader starts first. The 60 orders wait at a barrier and are released in 5 waves of 12,
+    // each wave released by the reader itself, which then keeps reading until that wave has settled. So every wave is in flight
+    // while reads are being made; the overlap does not depend on scheduling luck.
+    const WAVES = 5;
+    const PER_WAVE = 12;
+    const releases: Array<() => void> = [];
+    const gates = Array.from(
+      { length: WAVES },
+      () => new Promise<void>((resolve) => releases.push(resolve)),
+    );
+    let unresolved = 0; // orders released and not yet answered (counted up at release, down when answered)
+    const orders = Array.from({ length: WAVES * PER_WAVE }, (_, i) => {
+      const gate = gates[Math.floor(i / PER_WAVE)] as Promise<void>;
+      const body =
         i % 3 === 2
           ? { ...BUY_AAPL, side: 'SELL', qty: '2', referencePrice: '99.98' }
-          : { ...BUY_AAPL, qty: '3', referencePrice: '100.00' },
-      ),
-    );
+          : { ...BUY_AAPL, qty: '3', referencePrice: '100.00' };
+      return gate.then(async () => {
+        try {
+          return await placeOrder(h, u, newKey(), body);
+        } finally {
+          unresolved -= 1;
+        }
+      });
+    });
+
     const distinctCash = new Set<string>();
+    let reads = 0;
     let consistent = 0;
+    let readsWithOrdersInFlight = 0; // reads that STARTED while at least one released order had not been answered
+    let wavesWithOverlap = 0;
+    const readOnce = async (): Promise<void> => {
+      const inFlightAtStart = unresolved > 0;
+      const res = await getAs(h, u, '/v1/portfolio');
+      reads += 1;
+      if (inFlightAtStart) readsWithOrdersInFlight += 1;
+      expect(res.status).toBe(200);
+      const p = res.body;
+      expect(identity(p), `read ${String(reads)}`).toBe('10000');
+      // internal consistency of the same response
+      const sumCost = p.positions.reduce(
+        (a: ReturnType<typeof parse>, x: { exact: { costBasis: string } }) =>
+          a.add(parse(x.exact.costBasis)),
+        parse('0'),
+      );
+      expect(sumCost.toString()).toBe(dec(p.exact.costBasis));
+      const sumValue = p.positions.reduce(
+        (a: ReturnType<typeof parse>, x: { exact: { marketValue: string | null } }) =>
+          a.add(parse(x.exact.marketValue ?? '0')),
+        parse('0'),
+      );
+      expect(sumValue.toString()).toBe(dec(p.exact.positionsValue));
+      expect(parse(p.exact.cash).add(parse(p.exact.positionsValue)).toString()).toBe(
+        dec(p.exact.equity),
+      );
+      expect(p.incomplete).toBe(false);
+      distinctCash.add(String(p.exact.cash));
+      consistent += 1;
+    };
     const reader = (async () => {
-      for (let i = 0; i < 100; i += 1) {
-        const res = await getAs(h, u, '/v1/portfolio');
-        expect(res.status).toBe(200);
-        const p = res.body;
-        expect(identity(p), `read ${String(i)}`).toBe('10000');
-        // internal consistency of the same response
-        const sumCost = p.positions.reduce(
-          (a: ReturnType<typeof parse>, x: { exact: { costBasis: string } }) =>
-            a.add(parse(x.exact.costBasis)),
-          parse('0'),
-        );
-        expect(sumCost.toString()).toBe(dec(p.exact.costBasis));
-        const sumValue = p.positions.reduce(
-          (a: ReturnType<typeof parse>, x: { exact: { marketValue: string | null } }) =>
-            a.add(parse(x.exact.marketValue ?? '0')),
-          parse('0'),
-        );
-        expect(sumValue.toString()).toBe(dec(p.exact.positionsValue));
-        expect(parse(p.exact.cash).add(parse(p.exact.positionsValue)).toString()).toBe(
-          dec(p.exact.equity),
-        );
-        expect(p.incomplete).toBe(false);
-        distinctCash.add(String(p.exact.cash));
-        consistent += 1;
+      for (let w = 0; w < WAVES; w += 1) {
+        for (let i = 0; i < 3; i += 1) await readOnce(); // reads before the wave
+        const before = readsWithOrdersInFlight;
+        unresolved += PER_WAVE;
+        releases[w]?.(); // the wave starts NOW (synchronously, before the next read begins)
+        let inWave = 0;
+        do {
+          await readOnce();
+          inWave += 1;
+        } while (unresolved > 0 || inWave < 12);
+        if (readsWithOrdersInFlight > before) wavesWithOverlap += 1;
       }
+      await readOnce();
     })();
     const [results] = await Promise.all([Promise.all(orders), reader]);
     expect(results.every((r) => r.status === 201)).toBe(true);
-    expect(consistent).toBe(100); // 100 of 100
-    expect(distinctCash.size).toBeGreaterThanOrEqual(5); // the reads really overlapped the orders
+    // every consistency claim, unchanged: every read of the whole run is consistent
+    expect(consistent).toBe(reads);
+    expect(reads).toBeGreaterThanOrEqual(100);
+    // the overlap precondition, measured from counters (not from timing luck): every wave had reads that began while its orders
+    // were in flight, and the reads did see the cash move
+    expect(wavesWithOverlap).toBe(WAVES);
+    expect(readsWithOrdersInFlight).toBeGreaterThanOrEqual(WAVES);
+    expect(distinctCash.size).toBeGreaterThanOrEqual(2);
     expect(await reconcileAccount(db.app, u.accountId)).toEqual([]);
     expect(identity((await getAs(h, u, '/v1/portfolio')).body)).toBe('10000');
   }, 300_000);
