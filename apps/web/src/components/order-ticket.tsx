@@ -46,6 +46,12 @@ export function OrderTicket(props: {
   refreshFailed: boolean;
   refreshQuote: () => void;
   position: PositionResponse | null | undefined;
+  /** The book (M8b-2) learns which kind the ticket is in, to say whether a price click can fill the limit price. */
+  onKindChange?: (kind: OrderKind) => void;
+  /** A price clicked in the book: copied as a STRING into the limit price when the ticket is in Limit mode. */
+  pricePick?: { readonly price: string; readonly seq: number } | null;
+  /** The order result is on screen: the book re-reads the caller's own orders. */
+  onSettled?: () => void;
 }) {
   const { instrument, quote, refreshFailed, position } = props;
   const router = useRouter();
@@ -236,6 +242,21 @@ export function OrderTicket(props: {
       return () => clearTimeout(id);
     }
   }, [t.phase, t.outcome?.kind]);
+
+  const { onKindChange, onSettled, pricePick } = props;
+  useEffect(() => {
+    onKindChange?.(t.kind);
+  }, [t.kind, onKindChange]);
+  useEffect(() => {
+    if (t.phase === 'done') onSettled?.();
+  }, [t.phase, onSettled]);
+  const lastPick = useRef(0);
+  useEffect(() => {
+    if (pricePick === null || pricePick === undefined || pricePick.seq === lastPick.current) return;
+    lastPick.current = pricePick.seq;
+    if (t.kind === 'LIMIT')
+      dispatch({ type: 'setLimitPrice', limitPrice: sanitizeLimitPrice(pricePick.price) });
+  }, [pricePick, t.kind]);
 
   // after a fill, ask the API for the cash balance now (a string, as received)
   const filled = t.outcome?.kind === 'filled';

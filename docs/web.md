@@ -171,3 +171,13 @@ The ticket has an order-type choice (Market or Limit). A limit order takes a lim
 ## Dependency notes
 
 - Next.js is pinned to 16.4.5 (N1, D-84): the lowest 16.x release fixing GHSA-mfr8-8qww-v76h and GHSA-vc7v-qv4w-wrv8. Older 16.2.0 to 16.4.4 builds stop with a SecurityFatalError advisory notice. This app uses none of the affected features (no `use cache`, `unstable_cache`, root params or Cache Components).
+
+## Simulated order book (M8b-2)
+
+`DepthBook` (`apps/web/src/components/depth-book.tsx`) sits on the instrument page under the quote panel, for stocks, ETFs and crypto. It shows the API's simulated depth (`GET /v1/market/depth`, [api.md](api.md)): asks on top with the lowest ask nearest the spread, a spread row (the server's `spread` and `mid` strings), bids below. The sentence "Simulated depth: informational. Fills use the simulated execution model (QBX-1), not this book." is visible text next to the book in every state, and the "Simulated market data" banner stays.
+
+- **No browser arithmetic.** Prices, sizes, spread, mid and the bar widths (`cumPct`, an integer percent from the server) are strings and integers as received. The caller's own open limit orders come from `GET /v1/market/depth/my-orders`: a row shows "Your order" when the server's `level` for an order of that side equals the row's level; an order the server says is off the ladder is listed under "Your orders outside the visible book".
+- **Price click.** Each price is a button. In Limit mode it copies the row's price string into the ticket's limit price (string copy). In Market mode it is `aria-disabled` and the hint under the book says to switch to Limit.
+- **States.** Loading, error (no levels kept), and no-levels (stale, closed, unavailable: "Depth unavailable: quote is stale.", and so on) render no price at all.
+- **Polling** (`use-depth-poll.ts`): the same interval and visibility rule as the quote feed (paused while the tab is hidden, refreshed when it returns), exponential backoff after errors, one cycle in flight at a time, abort on unmount; the book is re-read when the order result is shown.
+- **Accessibility.** A real table with a caption and column headers; bars are `aria-hidden`; the marker has text; prices are keyboard-reachable buttons; no horizontal page scroll at 375 px.

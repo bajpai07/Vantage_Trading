@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { useState } from 'react';
 import type {
   InstrumentItem,
   MarketStatusResponse,
@@ -12,7 +13,10 @@ import { formatUtcShort } from '../lib/format';
 import { formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money';
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
+import { useDepthPoll } from '../lib/use-depth-poll';
 import { useQuotePoll } from '../lib/use-quote-poll';
+import type { OrderKind } from '../lib/ticket';
+import { DepthBook } from './depth-book';
 import { OrderTicket } from './order-ticket';
 import { QuotePanel } from './quote-panel';
 import { Alert, EmptyState } from './ui';
@@ -157,6 +161,9 @@ export function InstrumentView(props: {
 }) {
   const { instrument } = props;
   const poll = useQuotePoll(instrument.symbol, props.initialQuote, props.quotePollMs);
+  const depth = useDepthPoll(instrument.symbol, props.quotePollMs);
+  const [ticketKind, setTicketKind] = useState<OrderKind>('MARKET');
+  const [pick, setPick] = useState<{ price: string; seq: number } | null>(null);
   const sv = statusView(instrument.status);
   return (
     <div data-testid="instrument-page" data-symbol={instrument.symbol}>
@@ -190,6 +197,12 @@ export function InstrumentView(props: {
             market={props.market}
             refreshFailed={poll.refreshFailed}
           />
+          <DepthBook
+            symbol={instrument.symbol}
+            state={depth.state}
+            canPick={ticketKind === 'LIMIT'}
+            onPick={(price) => setPick((p) => ({ price, seq: (p?.seq ?? 0) + 1 }))}
+          />
           <PositionPanel symbol={instrument.symbol} position={props.position} />
           <RecentOrders symbol={instrument.symbol} orders={props.orders} />
         </div>
@@ -199,6 +212,9 @@ export function InstrumentView(props: {
           refreshFailed={poll.refreshFailed}
           refreshQuote={poll.refreshNow}
           position={props.position}
+          onKindChange={setTicketKind}
+          pricePick={pick}
+          onSettled={depth.refreshNow}
         />
       </div>
     </div>

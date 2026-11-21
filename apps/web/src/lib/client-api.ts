@@ -12,7 +12,7 @@ export async function clientRequest<T>(
   method: 'GET' | 'POST',
   path: string,
   schema: ZodType<T> | null,
-  options: { body?: unknown; headers?: Record<string, string> } = {},
+  options: { body?: unknown; headers?: Record<string, string>; signal?: AbortSignal } = {},
 ): Promise<ApiResult<T>> {
   try {
     const res = await fetch(`/api${path}`, {
@@ -25,7 +25,10 @@ export async function clientRequest<T>(
         ...options.headers,
       },
       ...(options.body === undefined ? {} : { body: JSON.stringify(options.body) }),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
+      signal:
+        options.signal === undefined
+          ? AbortSignal.timeout(TIMEOUT_MS)
+          : AbortSignal.any([AbortSignal.timeout(TIMEOUT_MS), options.signal]),
     });
     return await interpretResponse(res, schema);
   } catch {
@@ -33,5 +36,9 @@ export async function clientRequest<T>(
   }
 }
 
-export const clientGet = <T>(path: string, schema: ZodType<T>): Promise<ApiResult<T>> =>
-  clientRequest('GET', path, schema);
+export const clientGet = <T>(
+  path: string,
+  schema: ZodType<T>,
+  signal?: AbortSignal,
+): Promise<ApiResult<T>> =>
+  clientRequest('GET', path, schema, signal === undefined ? {} : { signal });
