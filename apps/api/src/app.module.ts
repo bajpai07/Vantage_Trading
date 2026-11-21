@@ -5,6 +5,7 @@ import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { ConfigModule } from './modules/config/config.module.js';
 import { DbModule } from './modules/db/db.module.js';
+import { DepthModule } from './modules/depth/depth.module.js';
 import { FeedModule } from './modules/feed/feed.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { InstrumentsModule } from './modules/instruments/instruments.module.js';
@@ -31,6 +32,7 @@ import { WatchlistsModule } from './modules/watchlists/watchlists.module.js';
     MarketDataModule,
     WatchlistsModule,
     OrdersModule,
+    DepthModule,
     PortfolioModule,
   ],
 })

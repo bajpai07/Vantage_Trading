@@ -184,3 +184,12 @@ Read on 2026-11-14 by automated fetch. **Nothing below is a conclusion that the 
 2. **Or a licensed data provider** behind the existing `MarketDataProvider` interface (this is also what M3b plans for US stocks).
 3. The adapter would implement `MarketDataProvider` and publish through the existing ingest and validator; the engine, the quote store and the API contracts do not change (`mode: LIVE` and a new `source` label are already part of the `/v1/market/feed` contract). It would need reconnect with backoff and jitter, a heartbeat watchdog (a connected but silent socket is not healthy), a symbol map (`BTCUSDT` or `BTC-USD` to `BTC-USD`), bounded queues, a kill switch, and a local fake WebSocket server for tests (no test may use the internet).
 4. Notes from the probe for that adapter: Binance quotes in USDT (a USD display would need a stated assumption or a USD pair), `bookTicker` has no timestamp (freshness would come from receive time), Coinbase `ticker` carries `time`.
+
+## Simulated depth (M8b-2: D-98 to D-102)
+
+`buildDepth` (`packages/engine/src/depth.ts`) builds an informational order book from the **current validated quote** and the SIM seed, using the same seeded hash as the price walk (no second random source). It is a pure function of (quote, instrument, seed, levels, quote-time bucket): the same inputs give byte-identical output.
+
+- **Prices.** Level 1 of each side is the quote's own bid or ask. Steps are `tick x stepMultiple`, where `stepMultiple = max(1, floor((bid + ask) x spanBps / (2 x 10,000 x 14 x tick)))` and the span of a 15-level book is a documented constant per class: CRYPTO 15 bps, EQUITY and ETF 30 bps. BTC-USD at 89,990.00 / 90,010.00: step 9.64 (964 ticks), level 15 ask 90,144.96, bid 89,855.04. AAPL at 189.95 / 190.00: step 0.04, level 15 ask 190.56, bid 189.39.
+- **Sizes.** Multiples of `qty_step`, at least `min_qty`, from a hash of (seed, symbol, 5-second quote bucket, side, level): larger near the top for stocks, noisy decay for crypto (the recipe is in the file header). The top size is a display value only.
+- **Freshness.** Only `REAL_TIME` and `DELAYED` quotes get a book; `STALE`, `CLOSED` and `UNAVAILABLE` get the state and no levels. The book is never stored; the API caches built books in a bounded LRU.
+- **Honesty (D-98).** The book is labelled simulated and informational everywhere it is shown. Orders, reservations, fills and the matcher never read it.

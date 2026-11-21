@@ -286,3 +286,82 @@ export const FeedInfoResponse = z.strictObject({
   sources: z.array(FeedSource).max(10),
 });
 export type FeedInfoResponse = z.output<typeof FeedInfoResponse>;
+
+// ---- simulated depth (M8b-2, D-98 to D-102) ------------------------------------------------------------------------
+
+/** The honesty sentence (D-98). It is shown as visible text next to the book and carried in every depth answer. */
+export const DEPTH_NOTE =
+  'Simulated depth: informational. Fills use the simulated execution model (QBX-1), not this book.';
+export const DEPTH_DEFAULT_LEVELS = 15;
+export const DEPTH_MAX_LEVELS = 25;
+
+const depthLevelsParam = z
+  .string()
+  .regex(/^[0-9]{1,2}$/, 'must be a whole number')
+  .transform(Number)
+  .pipe(z.number().int().min(1).max(DEPTH_MAX_LEVELS))
+  .optional();
+
+/** GET /v1/market/depth?symbol=BTC-USD&levels=15 */
+export const DepthQuery = z.strictObject({ symbol: SymbolSchema, levels: depthLevelsParam });
+export type DepthQuery = z.output<typeof DepthQuery>;
+
+const SizeString = z.string().regex(/^[0-9]+(\.[0-9]+)?$/, 'must be a decimal string');
+
+export const DepthLevel = z.strictObject({
+  /** An exact decimal string on the tick grid. Level 1 is the quote's own bid or ask. */
+  price: MoneyString,
+  /** A positive multiple of the instrument's qty_step. Informational: never used for execution. */
+  size: SizeString,
+  /** Cumulative size from the top of the side to this level, an integer 0 to 100 (percent of the larger side's total). */
+  cumPct: z.number().int().min(0).max(100),
+});
+export type DepthLevel = z.output<typeof DepthLevel>;
+
+export const DepthResponse = z.strictObject({
+  symbol: z.string(),
+  /** The quote's freshness state. Levels exist only for REAL_TIME and DELAYED (D-100). */
+  freshness: FreshnessState,
+  /** Always true: the levels beyond the best bid and ask are synthetic. */
+  simulated: z.literal(true),
+  /** The quote the book is built on (its provider time), or null when there is none. */
+  quoteAt: z.iso.datetime().nullable(),
+  /** Exact decimal strings computed by the server from the quote: ask - bid, and (bid + ask) / 2. Null without levels. */
+  spread: MoneyString.nullable(),
+  mid: MoneyString.nullable(),
+  /** Best bid first and best ask first. Null for STALE, CLOSED and UNAVAILABLE quotes. */
+  levels: z
+    .strictObject({
+      bids: z.array(DepthLevel).min(1).max(DEPTH_MAX_LEVELS),
+      asks: z.array(DepthLevel).min(1).max(DEPTH_MAX_LEVELS),
+    })
+    .nullable(),
+  /** DEPTH_NOTE. */
+  note: z.string().min(1),
+});
+export type DepthResponse = z.output<typeof DepthResponse>;
+
+/** GET /v1/market/depth/my-orders?symbol=BTC-USD&levels=15 (session required) */
+export const MyDepthOrdersQuery = DepthQuery;
+export type MyDepthOrdersQuery = DepthQuery;
+
+export const MyDepthOrder = z.strictObject({
+  orderId: z.string().uuid(),
+  side: z.enum(['BUY', 'SELL']),
+  /** The order's limit price. */
+  price: MoneyString,
+  qty: SizeString,
+  /** Decided by the server by exact decimal comparison with the ladder of the order's side (bids for BUY, asks for SELL). */
+  onBook: z.boolean(),
+  /** 1-based level on that ladder when onBook, else null. */
+  level: z.number().int().min(1).max(DEPTH_MAX_LEVELS).nullable(),
+});
+export type MyDepthOrder = z.output<typeof MyDepthOrder>;
+
+export const MyDepthOrdersResponse = z.strictObject({
+  symbol: z.string(),
+  freshness: FreshnessState,
+  /** The caller's own open LIMIT orders on this symbol, oldest first. Nobody else's orders are ever returned. */
+  orders: z.array(MyDepthOrder),
+});
+export type MyDepthOrdersResponse = z.output<typeof MyDepthOrdersResponse>;

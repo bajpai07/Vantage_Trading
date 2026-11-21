@@ -54,6 +54,8 @@ export interface Config {
    * (a maximum-size daily request costs 8), so many cheap requests or a few expensive ones both fit (in memory, per process).
    */
   readonly candlesRateLimitPerMinute: number;
+  /** Cost points per client per minute for the simulated depth routes (M8b-2, D-101). */
+  readonly depthRateLimitPerMinute: number;
   /** D-95: whether this process runs the limit-order matcher timer (the matcher function itself is always callable). */
   readonly matcher: (typeof MATCHER_MODES)[number];
   /** D-95: how often the matcher wakes, in milliseconds. */
@@ -164,6 +166,7 @@ const appSchema = z.object({
   ORDER_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'orders per user per minute'),
   ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'previews per user per minute'),
   CANDLES_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'candle cost points per user per minute'),
+  DEPTH_RATE_LIMIT_PER_MINUTE: intInRange(1, 100000, 'depth cost points per client per minute'),
   MATCHER: z.enum(MATCHER_MODES, { error: `must be one of: ${MATCHER_MODES.join(', ')}` }),
   MATCHER_INTERVAL_MS: intInRange(100, 60000, 'milliseconds'),
   GTC_EXPIRY_DAYS: intInRange(1, 365, 'days'),
@@ -201,6 +204,7 @@ export function loadConfig(env: Env): Config {
     ORDER_RATE_LIMIT_PER_MINUTE: env.ORDER_RATE_LIMIT_PER_MINUTE ?? '30',
     ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE: env.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE ?? '60',
     CANDLES_RATE_LIMIT_PER_MINUTE: env.CANDLES_RATE_LIMIT_PER_MINUTE ?? '120',
+    DEPTH_RATE_LIMIT_PER_MINUTE: env.DEPTH_RATE_LIMIT_PER_MINUTE ?? '120',
     MATCHER: env.MATCHER ?? 'off',
     MATCHER_INTERVAL_MS: env.MATCHER_INTERVAL_MS ?? '1000',
     GTC_EXPIRY_DAYS: env.GTC_EXPIRY_DAYS ?? '90',
@@ -327,6 +331,7 @@ export function loadConfig(env: Env): Config {
     orderRateLimitPerMinute: app.data.ORDER_RATE_LIMIT_PER_MINUTE,
     orderPreviewRateLimitPerMinute: app.data.ORDER_PREVIEW_RATE_LIMIT_PER_MINUTE,
     candlesRateLimitPerMinute: app.data.CANDLES_RATE_LIMIT_PER_MINUTE,
+    depthRateLimitPerMinute: app.data.DEPTH_RATE_LIMIT_PER_MINUTE,
     matcher: app.data.MATCHER,
     matcherIntervalMs: app.data.MATCHER_INTERVAL_MS,
     gtcExpiryDays: app.data.GTC_EXPIRY_DAYS,

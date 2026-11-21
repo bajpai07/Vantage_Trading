@@ -2,6 +2,8 @@
 // captured logs and optional provider overrides. Not part of the build (see tsconfig.build.json).
 import 'reflect-metadata';
 import type { NestExpressApplication } from '@nestjs/platform-express';
+import { Module } from '@nestjs/common';
+import type { ModuleDefinition } from '@nestjs/core/interfaces/module-definition.interface.js';
 import { Test } from '@nestjs/testing';
 import supertest from 'supertest';
 import { loadConfig } from '@vantage/config';
@@ -32,7 +34,12 @@ export interface HarnessOptions {
   readonly env?: Record<string, string | undefined>;
   /** token -> replacement value (useValue). */
   readonly overrides?: ReadonlyArray<readonly [unknown, unknown]>;
+  /** Modules replaced by an empty one (for a test that proves a module has no effect on the rest). */
+  readonly withoutModules?: readonly ModuleDefinition[];
 }
+
+@Module({})
+class EmptyModule {}
 
 export async function createHarness(db: TestDatabase, opts: HarnessOptions = {}): Promise<Harness> {
   const config = loadConfig(
@@ -64,6 +71,8 @@ export async function createHarness(db: TestDatabase, opts: HarnessOptions = {})
     .useValue(clock)
     .overrideProvider(LOGGER)
     .useValue(logger);
+  for (const m of opts.withoutModules ?? [])
+    builder = builder.overrideModule(m).useModule(EmptyModule);
   for (const [token, value] of opts.overrides ?? []) {
     builder = builder.overrideProvider(token as never).useValue(value);
   }

@@ -530,3 +530,35 @@ Cursors are positions `(timestamp, id)` inside the caller's own result set: rows
 | 401  | `UNAUTHENTICATED`   | No or invalid session.                                                                           |
 | 404  | `ACCOUNT_NOT_FOUND` | The user has no MAIN account.                                                                    |
 | 500  | `INTERNAL_ERROR`    | Unexpected failure (request id only; nothing is written by these routes).                        |
+
+## Simulated depth (M8b-2, D-98 to D-102)
+
+The order book is **informational and simulated**. Fills use the simulated execution model (QBX-1), never this book. Every answer carries `simulated: true` and the sentence `note`: "Simulated depth: informational. Fills use the simulated execution model (QBX-1), not this book."
+
+### `GET /v1/market/depth?symbol=BTC-USD&levels=15` (public, no session)
+
+`levels` is a whole number 1 to 25 (default 15); anything else, an unknown query parameter or a missing/invalid symbol is `400`; an unknown symbol is `404 INSTRUMENT_NOT_FOUND`. Answer (`Cache-Control: no-store`):
+
+```json
+{
+  "symbol": "BTC-USD",
+  "freshness": "REAL_TIME",
+  "simulated": true,
+  "quoteAt": "2026-11-10T15:00:00.000Z",
+  "spread": "20.00",
+  "mid": "90000.00",
+  "levels": {
+    "bids": [{ "price": "89990.00", "size": "0.36804089", "cumPct": 4 }],
+    "asks": [{ "price": "90010.00", "size": "0.89690034", "cumPct": 9 }]
+  },
+  "note": "Simulated depth: informational. ..."
+}
+```
+
+- Level 1 is exactly the quote's bid and ask. Prices are canonical decimal strings on the tick grid; sizes are positive multiples of the instrument's `qtyStep` (at least `minQty`); `spread` and `mid` are exact decimals computed by the server; `cumPct` is an integer 0 to 100 (cumulative size as a share of the larger side's total) for the bars. The browser does no arithmetic.
+- **Freshness (D-100):** only for `REAL_TIME` and `DELAYED`. For `STALE`, `CLOSED` and `UNAVAILABLE` the answer is `200` with the state and `levels: null`, `spread: null`, `mid: null`.
+- **Cost (D-101):** each request spends points from `DEPTH_RATE_LIMIT_PER_MINUTE` (default 120) per client address per minute: 1 point up to 15 levels, 2 above. `429 RATE_LIMITED` with `Retry-After` when the allowance is used up. The built book is cached in process in a bounded LRU (256 books) keyed by symbol, quote-time bucket (5 s), levels, bid and ask.
+
+### `GET /v1/market/depth/my-orders?symbol=BTC-USD&levels=15` (session required)
+
+The caller's own open LIMIT orders on that symbol, oldest first: `{ symbol, freshness, orders: [{ orderId, side, price, qty, onBook, level }] }`. `onBook` and the 1-based `level` are decided by the server by exact decimal equality with the ladder of the order's side (bids for BUY, asks for SELL); an order that is not exactly on a displayed level (or any order when there is no ladder) has `onBook: false, level: null`. Another user's orders are never returned. Same cost limiter, keyed by user. The `levels` value should equal the one used for the book.

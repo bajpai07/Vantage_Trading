@@ -361,3 +361,16 @@ describe('limit-order matcher settings (M8b-1)', () => {
     }
   });
 });
+
+describe('depth request allowance (M8b-2)', () => {
+  it('DEPTH_RATE_LIMIT_PER_MINUTE defaults to 120 and is a bounded whole number', () => {
+    expect(loadConfig(buildTestEnv()).depthRateLimitPerMinute).toBe(120);
+    expect(
+      loadConfig(buildTestEnv({ DEPTH_RATE_LIMIT_PER_MINUTE: '20' })).depthRateLimitPerMinute,
+    ).toBe(20);
+    for (const v of ['0', '100001', 'many', '1.5', '']) {
+      const e = fail(buildTestEnv({ DEPTH_RATE_LIMIT_PER_MINUTE: v }));
+      expect(e.issues.map((i) => i.name)).toContain('DEPTH_RATE_LIMIT_PER_MINUTE');
+    }
+  });
+});

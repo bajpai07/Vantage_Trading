@@ -26,3 +26,4 @@ export const ORDER_HOOKS = Symbol('ORDER_HOOKS');
 export const ORDER_PREVIEW_LIMITER = Symbol('ORDER_PREVIEW_LIMITER');
 export const CANDLE_PROVIDER = Symbol('CANDLE_PROVIDER');
 export const CANDLES_LIMITER = Symbol('CANDLES_LIMITER');
+export const DEPTH_LIMITER = Symbol('DEPTH_LIMITER');

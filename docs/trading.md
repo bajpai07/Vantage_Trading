@@ -138,6 +138,10 @@ Resting LIMIT orders for stocks and crypto, inside the same guarantees as everyt
 
 **Golden vectors E to I** (BTC-USD, 5 bps slippage, 10 bps commission, tick 0.01, grant 10,000; hard-coded in the tests): E a resting BUY 0.0025 LIMIT 89,900.00 reserves 224.97475 (cash 9,775.02525) and fills at 89,894.93 when the quote is 89,830.00 / 89,850.00 (cash 9,775.03793768); F a limit that caps the slippage (the fill is the limit 89,900.00, CASH +0); G a resting SELL 0.001 LIMIT 90,100.00 fills at the limit when the bid is 90,120.00 (realised +0.04499); H cancel and expire release exactly (cash 10,000); I a stale quote is not evaluated and a fresh one fills at its own price (89,754.86). The ledger legs are in [ledger.md](ledger.md).
 
+## Depth does not touch execution (M8b-2, D-98)
+
+The simulated order book (`GET /v1/market/depth`) is informational. Fills, reservations, the matcher and every ledger posting use the validated quote and the QBX-1 model exactly as before; nothing in the trading code reads the book, and its displayed sizes are never liquidity. `apps/api/src/modules/depth/fills-unchanged.int.test.ts` runs a fixed scenario (market BUY, resting limit BUY filled by the matcher, a cancel, a resting limit SELL filled by the matcher, market SELL) with the depth module absent and with it queried continuously, and compares ledger entries, balances, orders, events, executions, lots and positions byte for byte.
+
 ## What comes next
 
 Limit and stop orders, reservations, cancel, the async matcher, the account-event outbox, the purge of idempotency rows after 48 hours, portfolio valuation and P&L (M5).
