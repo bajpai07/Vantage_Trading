@@ -12,3 +12,4 @@ test-results
 playwright-report
 THIRD_PARTY_NOTICES.md
 apps/web/src/lib/third-party-notices.ts
+apps/web/src/lib/dependency-licenses.ts

@@ -222,3 +222,168 @@ Licence: MIT (the package ships no separate licence file; see https://github.com
 ## Fonts
 
 Inter (@fontsource-variable/inter) and JetBrains Mono (@fontsource-variable/jetbrains-mono) are licensed under the SIL Open Font License 1.1 (https://openfontlicense.org/).
+
+<!-- GENERATED BELOW (tools/generate-notices.mjs) -->
+
+## Fonts (SIL Open Font License 1.1)
+
+- Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter) Inter-Italic[opsz,wght].ttf: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
+- Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono) JetBrainsMono-Italic[wght].ttf: Copyright 2020 The JetBrains Mono Project Authors (https://github.com/JetBrains/JetBrainsMono)
+
+These fonts are licensed under the SIL Open Font License, Version 1.1 (https://openfontlicense.org/ (SIL Open Font License, Version 1.1, 26 February 2007)). They are self-hosted through the @fontsource-variable packages.
+
+## Browser data (CC BY 4.0)
+
+Browser support data in caniuse-lite is from caniuse.com and is licensed under the Creative Commons Attribution 4.0 International licence (CC BY 4.0, https://creativecommons.org/licenses/by/4.0/). It is used at build time to choose browser targets and is not shown to users.
+
+## Optional image binary
+
+Next.js lists an optional image-optimisation binary (@img/sharp-*, with libvips, Apache-2.0 AND LGPL-3.0-or-later). VANTAGE never uses next/image and the binary is not part of the container images (see docs/DOCKER.md); it is an optional development-time binary only.
+
+## Production dependencies (143 package versions; name, version, SPDX licence)
+
+| Package | Version | Licence |
+| --- | --- | --- |
+| @borewit/text-codec | 0.2.3 | MIT |
+| @fontsource-variable/inter | 5.3.0 | OFL-1.1 |
+| @fontsource-variable/jetbrains-mono | 5.3.0 | OFL-1.1 |
+| @img/colour | 1.1.0 | MIT |
+| @img/sharp-win32-x64 | 0.35.5 | Apache-2.0 AND LGPL-3.0-or-later |
+| @lukeed/csprng | 1.1.0 | MIT |
+| @nestjs/common | 12.4.2 | MIT |
+| @nestjs/core | 12.4.2 | MIT |
+| @nestjs/platform-express | 12.4.2 | MIT |
+| @next/env | 16.4.5 | MIT |
+| @next/swc-win32-x64-msvc | 16.4.5 | MIT |
+| @node-rs/argon2 | 2.2.2 | MIT |
+| @node-rs/argon2-win32-x64-msvc | 2.2.2 | MIT |
+| @playwright/test | 1.64.1 | Apache-2.0 |
+| @standard-schema/spec | 1.1.0 | MIT |
+| @swc/helpers | 0.5.23 | Apache-2.0 |
+| @tokenizer/inflate | 0.6.0 | MIT |
+| @tokenizer/token | 0.3.0 | MIT |
+| @types/node | 22.19.0 | MIT |
+| accepts | 2.0.0 | MIT |
+| append-field | 1.0.0 | MIT |
+| baseline-browser-mapping | 2.11.37 | Apache-2.0 |
+| body-parser | 2.4.0 | MIT |
+| busboy | 1.6.0 | MIT |
+| bytes | 3.1.2 | MIT |
+| call-bind-apply-helpers | 1.0.2 | MIT |
+| call-bound | 1.0.4 | MIT |
+| caniuse-lite | 1.0.30001826 | CC-BY-4.0 |
+| client-only | 0.0.1 | MIT |
+| content-disposition | 2.0.1 | MIT |
+| content-type | 2.1.0 | MIT |
+| cookie | 0.7.2 | MIT |
+| cookie-signature | 1.2.2 | MIT |
+| cors | 2.8.6 | MIT |
+| debug | 4.4.3 | MIT |
+| decimal.js | 10.6.0 | MIT |
+| depd | 2.0.0 | MIT |
+| detect-libc | 2.1.2 | Apache-2.0 |
+| dunder-proto | 1.0.1 | MIT |
+| ee-first | 1.1.1 | MIT |
+| encodeurl | 2.0.1 | MIT |
+| es-define-property | 1.0.1 | MIT |
+| es-errors | 1.3.0 | MIT |
+| es-object-atoms | 1.1.2 | MIT |
+| escape-html | 1.0.3 | MIT |
+| etag | 1.8.1 | MIT |
+| express | 5.3.0 | MIT |
+| fancy-canvas | 2.1.0 | MIT |
+| fast-safe-stringify | 2.1.1 | MIT |
+| file-type | 22.3.0 | MIT |
+| finalhandler | 2.1.1 | MIT |
+| forwarded | 0.2.0 | MIT |
+| fresh | 2.0.0 | MIT |
+| function-bind | 1.1.2 | MIT |
+| get-intrinsic | 1.3.0 | MIT |
+| get-proto | 1.0.1 | MIT |
+| gopd | 1.2.0 | MIT |
+| has-symbols | 1.1.0 | MIT |
+| hasown | 2.0.4 | MIT |
+| http-errors | 2.0.1 | MIT |
+| iconv-lite | 0.7.3 | MIT |
+| ieee754 | 1.2.1 | BSD-3-Clause |
+| inherits | 2.0.4 | ISC |
+| ipaddr.js | 1.9.1 | MIT |
+| is-promise | 4.0.0 | MIT |
+| iterare | 1.2.1 | ISC |
+| lightweight-charts | 5.2.1 | Apache-2.0 |
+| load-esm | 1.0.3 | MIT |
+| math-intrinsics | 1.1.0 | MIT |
+| media-typer | 0.3.0 | MIT |
+| media-typer | 1.1.1 | MIT |
+| merge-descriptors | 2.0.0 | MIT |
+| mime-db | 1.52.0 | MIT |
+| mime-db | 1.54.0 | MIT |
+| mime-types | 2.1.35 | MIT |
+| mime-types | 3.0.2 | MIT |
+| ms | 2.1.3 | MIT |
+| multer | 2.5.0 | MIT |
+| nanoid | 3.3.20 | MIT |
+| negotiator | 1.1.0 | MIT |
+| next | 16.4.5 | MIT |
+| object-assign | 4.1.1 | MIT |
+| object-inspect | 1.13.4 | MIT |
+| on-finished | 2.4.2 | MIT |
+| once | 1.4.0 | ISC |
+| parseurl | 1.3.3 | MIT |
+| path-to-regexp | 8.4.2 | MIT |
+| pg | 8.23.1 | MIT |
+| pg-cloudflare | 1.4.1 | MIT |
+| pg-connection-string | 2.14.1 | MIT |
+| pg-int8 | 1.0.1 | ISC |
+| pg-pool | 3.14.0 | MIT |
+| pg-protocol | 1.16.1 | MIT |
+| pg-types | 2.2.0 | MIT |
+| pgpass | 1.0.5 | MIT |
+| picocolors | 1.1.1 | ISC |
+| playwright | 1.64.1 | Apache-2.0 |
+| playwright-core | 1.64.1 | Apache-2.0 |
+| postcss | 8.5.23 | MIT |
+| postgres-array | 2.0.0 | MIT |
+| postgres-bytea | 1.0.1 | MIT |
+| postgres-date | 1.0.7 | MIT |
+| postgres-interval | 1.2.0 | MIT |
+| proxy-addr | 2.0.8 | MIT |
+| qs | 6.17.1 | BSD-3-Clause |
+| range-parser | 1.3.0 | MIT |
+| raw-body | 3.0.2 | MIT |
+| react | 19.3.1 | MIT |
+| react-dom | 19.3.1 | MIT |
+| reflect-metadata | 0.2.2 | Apache-2.0 |
+| router | 2.2.0 | MIT |
+| rxjs | 7.8.2 | Apache-2.0 |
+| safer-buffer | 2.1.2 | MIT |
+| scheduler | 0.28.0 | MIT |
+| semver | 7.8.6 | ISC |
+| send | 1.2.1 | MIT |
+| serve-static | 2.2.1 | MIT |
+| setprototypeof | 1.2.0 | ISC |
+| sharp | 0.35.5 | Apache-2.0 |
+| side-channel | 1.1.1 | MIT |
+| side-channel-list | 1.0.1 | MIT |
+| side-channel-map | 1.0.1 | MIT |
+| side-channel-weakmap | 1.0.2 | MIT |
+| source-map-js | 1.2.2 | BSD-3-Clause |
+| split2 | 4.2.0 | ISC |
+| statuses | 2.0.2 | MIT |
+| streamsearch | 1.1.0 | MIT |
+| strtok3 | 10.7.0 | MIT |
+| styled-jsx | 5.1.6 | MIT |
+| toidentifier | 1.0.1 | MIT |
+| token-types | 6.2.0 | MIT |
+| tslib | 2.9.1 | 0BSD |
+| type-is | 1.6.18 | MIT |
+| type-is | 2.1.0 | MIT |
+| uid | 2.0.2 | MIT |
+| uint8array-extras | 1.6.0 | MIT |
+| undici-types | 6.21.0 | MIT |
+| unpipe | 1.0.0 | MIT |
+| uuid | 14.0.3 | MIT |
+| vary | 1.1.2 | MIT |
+| wrappy | 1.0.2 | ISC |
+| xtend | 4.0.2 | MIT |
+| zod | 4.6.7 | MIT |

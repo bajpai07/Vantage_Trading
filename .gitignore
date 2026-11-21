@@ -7,9 +7,15 @@ coverage
 .env.*
 !.env.example
 !.env.infra.example
+!.env.compose.example
 
 # web app
 .next
 next-env.d.ts
 test-results
 playwright-report
+
+# demo recordings and tool output (M10)
+demo-videos/
+*.webm
+.compose-secrets/
