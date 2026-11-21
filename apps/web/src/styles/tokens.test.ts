@@ -28,27 +28,36 @@ function contrast(a: string, b: string): number {
   return (hi + 0.05) / (lo + 0.05);
 }
 
-describe('tokens match DESIGN_SYSTEM section 2', () => {
+// M9a: the palette is the founder's Terminal.dc.html mock. Where it differs from DESIGN_SYSTEM section 2 the mock wins for look
+// (recorded with D-103); the contrast and raw-colour rules of DESIGN_SYSTEM still apply and are tested below.
+describe('tokens match Terminal.dc.html (M9a) and keep the DESIGN_SYSTEM rules', () => {
   it.each([
-    ['bg-0', '#070a12'],
-    ['bg-1', '#0b1020'],
-    ['bg-2', '#10172a'],
-    ['bg-3', '#16203a'],
-    ['bg-4', '#1d2a4a'],
-    ['line', '#1e2845'],
-    ['line-strong', '#2b3862'],
-    ['text-0', '#f2f5fb'],
-    ['text-1', '#c3cce0'],
-    ['text-2', '#8591ad'],
-    ['text-3', '#5f6b88'],
-    ['accent', '#3d7bff'],
-    ['accent-hi', '#6a9bff'],
+    ['bg-0', '#0b0e13'],
+    ['bg-1', '#0f131b'],
+    ['bg-2', '#121822'],
+    ['bg-3', '#1a2332'],
+    ['bg-4', '#1e2a44'],
+    ['line', '#232c3a'],
+    ['line-strong', '#2b3547'],
+    ['text-0', '#e8ecf2'],
+    ['text-1', '#c3cad6'],
+    ['text-2', '#98a2b3'],
+    ['text-3', '#667184'],
+    ['accent', '#4f7cff'],
+    ['accent-hi', '#7da0ff'],
     ['violet', '#8b6cff'],
-    ['up', '#27c28a'],
-    ['down', '#f2566b'],
-    ['warn', '#e8b24a'],
+    ['up', '#3ddc97'],
+    ['down', '#ff7a7a'],
+    ['warn', '#f5b93b'],
     ['stale', '#e8884a'],
     ['info', '#4bb5e8'],
+    ['primary', '#2f5fe3'],
+    ['down-text', '#ff9a9a'],
+    ['sim-bg', '#f5b93b'],
+    ['sim-fg', '#1a1300'],
+    ['buy', '#1f6b4d'],
+    ['sell', '#a03a47'],
+    ['chip-up', '#1b3a2e'],
   ])('--%s is %s', (name, hex) => {
     expect(token(name).toLowerCase()).toBe(hex);
   });
@@ -64,6 +73,7 @@ describe('contrast (text at least 4.5:1, UI components at least 3:1)', () => {
     'accent-hi',
     'up',
     'down',
+    'down-text',
     'warn',
     'stale',
     'info',

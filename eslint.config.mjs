@@ -216,6 +216,87 @@ export default tseslint.config(
     },
   },
   {
+    // M9a (D-103): NO number conversion and NO float arithmetic anywhere in the web app's source, except (1) the one audited chart
+    // module, apps/web/src/lib/chart-data.ts, which turns decimal strings into numbers only to position pixels, and (2) the few
+    // pre-M9a files below, which never touch a price, size or amount: they turn integers of time (seconds, minutes, milliseconds,
+    // environment variables, Retry-After) into integers or lay out SVG geometry. Raw hex colours stay banned everywhere (tokens.css
+    // only). Tests are exempt. A unit test (tokens/number guard) pins this allow-list, so a new float use elsewhere fails lint.
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    ignores: [
+      '**/*.test.{ts,tsx}',
+      'apps/web/src/lib/chart-data.ts',
+      'apps/web/src/components/equity-line.tsx', // SVG geometry of the equity line (M6a)
+      'apps/web/src/lib/chart.ts', // equity line scaling (M6a)
+      'apps/web/src/components/feed-banner.tsx', // minutes of a feed delay (a duration)
+      'apps/web/src/components/quote-panel.tsx', // seconds of a quote age (a duration)
+      'apps/web/src/lib/api-core.ts', // Retry-After seconds
+      'apps/web/src/lib/config.ts', // integer environment variables
+      'apps/web/src/lib/errors.ts', // seconds in a retry message
+      'apps/web/src/lib/market.ts', // seconds of an age
+    ],
+    rules: {
+      'no-restricted-syntax': [
+        'error',
+        {
+          selector: 'Literal[value=/#[0-9a-fA-F]{3,8}\b/]',
+          message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
+        },
+        {
+          selector: 'TemplateElement[value.raw=/#[0-9a-fA-F]{3,8}\b/]',
+          message: 'web: no raw hex colours (use the design tokens in src/styles/tokens.css)',
+        },
+        {
+          selector: "CallExpression[callee.name='parseFloat']",
+          message: 'web: parseFloat is banned (only src/lib/chart-data.ts converts numbers)',
+        },
+        {
+          selector: "CallExpression[callee.name='parseInt']",
+          message: 'web: parseInt is banned (only src/lib/chart-data.ts converts numbers)',
+        },
+        {
+          selector: "CallExpression[callee.name='Number']",
+          message: 'web: Number(...) is banned (only src/lib/chart-data.ts converts numbers)',
+        },
+        {
+          selector: "MemberExpression[object.name='Math']",
+          message: 'web: Math.* is banned (only src/lib/chart-data.ts may use it)',
+        },
+        {
+          selector: 'Literal[value=type(number)][raw=/[.eE]/]',
+          message: 'web: decimal or exponent number literals are banned',
+        },
+        {
+          selector: "UnaryExpression[operator='+']",
+          message: 'web: unary + (number conversion) is banned',
+        },
+      ],
+    },
+  },
+  {
+    // the chart-data module is importable by the chart components only: never from order, ticket, money or portfolio code
+    files: ['apps/web/src/**/*.{ts,tsx}'],
+    ignores: [
+      '**/*.test.{ts,tsx}',
+      'apps/web/src/lib/chart-data.ts',
+      'apps/web/src/components/price-chart.tsx',
+      'apps/web/src/components/chart-panel.tsx',
+    ],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          patterns: [
+            {
+              group: ['**/chart-data', '**/chart-data.js'],
+              message:
+                'chart-data converts decimal strings to numbers for chart pixels only: import it from the chart components only (D-103)',
+            },
+          ],
+        },
+      ],
+    },
+  },
+  {
     files: ['packages/money/src/**/*.ts', 'packages/engine/src/**/*.ts'],
     ignores: ['**/*.test.ts'],
     rules: moneyGuardRules,

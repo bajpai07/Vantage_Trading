@@ -43,9 +43,15 @@ function StatusChip({ status }: { status: OrderResponse['status'] }) {
 export function OrdersList({
   initial,
   open,
+  view = 'all',
+  onOpenCount,
 }: {
   initial: ListOrdersResponse;
   open: ListOrdersResponse;
+  /** The terminal's bottom panel shows the open orders and the history in separate tabs (M9a); the orders page shows both. */
+  view?: 'all' | 'open' | 'history';
+  /** Reports how many orders are open (for a tab label); called when the count changes. */
+  onOpenCount?: (count: number) => void;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -84,6 +90,11 @@ export function OrdersList({
       clearInterval(id);
     };
   }, []);
+
+  const openCount = openOrders.length;
+  useEffect(() => {
+    onOpenCount?.(openCount);
+  }, [openCount, onOpenCount]);
 
   async function cancel(o: OrderResponse): Promise<void> {
     if (inflight.current.has(o.id)) return; // a second click while the first is in flight does nothing
@@ -138,7 +149,7 @@ export function OrdersList({
     (o) => updated[o.id] ?? o,
   );
 
-  if (rows.length === 0 && openOrders.length === 0) {
+  if (view !== 'open' && rows.length === 0 && openOrders.length === 0) {
     return (
       <EmptyState title="No orders yet">
         Orders you place appear here, filled, resting, cancelled or rejected, newest first.
@@ -147,44 +158,150 @@ export function OrdersList({
   }
   return (
     <div>
-      <section aria-labelledby="open-orders-title" className="mb-6" data-testid="open-orders">
-        <h2
-          id="open-orders-title"
-          className="mb-2 text-[16px] font-semibold leading-[22px] text-text-0"
-        >
-          Open orders
-        </h2>
-        <div
-          role="status"
-          aria-live="polite"
-          data-testid="cancel-notice"
-          className="mb-2 min-h-[0px]"
-        >
-          {notice === null ? null : (
-            <Alert kind={notice.kind === 'ok' ? 'info' : 'error'}>{notice.text}</Alert>
+      {view === 'history' ? null : (
+        <section aria-labelledby="open-orders-title" className="mb-6" data-testid="open-orders">
+          <h2
+            id="open-orders-title"
+            className="mb-2 text-[16px] font-semibold leading-[22px] text-text-0"
+          >
+            Open orders
+          </h2>
+          <div
+            role="status"
+            aria-live="polite"
+            data-testid="cancel-notice"
+            className="mb-2 min-h-[0px]"
+          >
+            {notice === null ? null : (
+              <Alert kind={notice.kind === 'ok' ? 'info' : 'error'}>{notice.text}</Alert>
+            )}
+          </div>
+          {openOrders.length === 0 ? (
+            <p className="text-[13px] text-text-2" data-testid="open-orders-empty">
+              No open orders. A limit order that is not filled right away rests here until it fills,
+              you cancel it or it expires.
+            </p>
+          ) : (
+            <div
+              className="relative overflow-x-auto rounded-md border border-line bg-bg-1"
+              role="region"
+              aria-label="Open orders table"
+              tabIndex={0}
+            >
+              <table
+                className="w-full min-w-[720px] border-collapse text-[12px] leading-4"
+                data-testid="open-orders-table"
+              >
+                <caption className="sr-only">Your open orders</caption>
+                <thead className="bg-bg-2">
+                  <tr>
+                    <th scope="col" className={TH}>
+                      Placed
+                    </th>
+                    <th scope="col" className={TH}>
+                      Symbol
+                    </th>
+                    <th scope="col" className={TH}>
+                      Side
+                    </th>
+                    <th scope="col" className={`${TH} text-right`}>
+                      Qty
+                    </th>
+                    <th scope="col" className={TH}>
+                      Type
+                    </th>
+                    <th scope="col" className={TH}>
+                      Held
+                    </th>
+                    <th scope="col" className={TH}>
+                      Expires
+                    </th>
+                    <th scope="col" className={TH}>
+                      <span className="sr-only">Cancel</span>
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {openOrders.map((o) => (
+                    <tr
+                      key={o.id}
+                      data-testid="open-order-row"
+                      className="border-t border-line hover:bg-bg-3"
+                    >
+                      <td className="num whitespace-nowrap px-2 py-1 align-top text-text-1">
+                        {formatUtcShort(o.createdAt)}
+                      </td>
+                      <th
+                        scope="row"
+                        className="px-2 py-1 text-left align-top font-semibold text-text-0"
+                      >
+                        {o.symbol}
+                      </th>
+                      <td
+                        className={`px-2 py-1 align-top font-medium ${o.side === 'BUY' ? 'text-up' : 'text-down'}`}
+                      >
+                        <span aria-hidden="true">{o.side === 'BUY' ? '▲ ' : '▼ '}</span>
+                        {o.side}
+                      </td>
+                      <td className="num px-2 py-1 text-right align-top">{formatQty(o.qty)}</td>
+                      <td
+                        className="num px-2 py-1 align-top text-text-1"
+                        data-testid="open-order-type"
+                      >
+                        {typeLabel(o)}
+                      </td>
+                      <td
+                        className="num px-2 py-1 align-top text-text-1"
+                        data-testid="open-order-held"
+                      >
+                        {heldLabel(o) ?? '—'}
+                      </td>
+                      <td
+                        className="num whitespace-nowrap px-2 py-1 align-top text-text-1"
+                        data-testid="open-order-expires"
+                      >
+                        {o.expiresAt === null ? '—' : formatUtc(o.expiresAt)}
+                      </td>
+                      <td className="px-2 py-1 align-top">
+                        <button
+                          type="button"
+                          data-testid="cancel-button"
+                          disabled={busy.has(o.id)}
+                          aria-busy={busy.has(o.id)}
+                          aria-label={`Cancel ${o.side === 'BUY' ? 'buy' : 'sell'} ${formatQty(o.qty)} ${o.symbol} limit order`}
+                          onClick={() => void cancel(o)}
+                          className={secondaryButtonClass}
+                        >
+                          {busy.has(o.id) ? 'Cancelling…' : 'Cancel'}
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
-        </div>
-        {openOrders.length === 0 ? (
-          <p className="text-[13px] text-text-2" data-testid="open-orders-empty">
-            No open orders. A limit order that is not filled right away rests here until it fills,
-            you cancel it or it expires.
-          </p>
-        ) : (
+        </section>
+      )}
+
+      {view === 'open' ? null : (
+        <>
+          <h2 className="mb-2 text-[16px] font-semibold leading-[22px] text-text-0">History</h2>
           <div
             className="relative overflow-x-auto rounded-md border border-line bg-bg-1"
             role="region"
-            aria-label="Open orders table"
+            aria-label="Orders table"
             tabIndex={0}
           >
             <table
-              className="w-full min-w-[720px] border-collapse text-[12px] leading-4"
-              data-testid="open-orders-table"
+              className="w-full min-w-[640px] border-collapse text-[12px] leading-4"
+              data-testid="orders-table"
             >
-              <caption className="sr-only">Your open orders</caption>
+              <caption className="sr-only">Your orders, newest first</caption>
               <thead className="bg-bg-2">
                 <tr>
                   <th scope="col" className={TH}>
-                    Placed
+                    Time
                   </th>
                   <th scope="col" className={TH}>
                     Symbol
@@ -199,21 +316,19 @@ export function OrdersList({
                     Type
                   </th>
                   <th scope="col" className={TH}>
-                    Held
+                    Status
                   </th>
                   <th scope="col" className={TH}>
-                    Expires
-                  </th>
-                  <th scope="col" className={TH}>
-                    <span className="sr-only">Cancel</span>
+                    Result
                   </th>
                 </tr>
               </thead>
               <tbody>
-                {openOrders.map((o) => (
+                {rows.map((o) => (
                   <tr
                     key={o.id}
-                    data-testid="open-order-row"
+                    data-testid="order-row"
+                    data-status={o.status}
                     className="border-t border-line hover:bg-bg-3"
                   >
                     <td className="num whitespace-nowrap px-2 py-1 align-top text-text-1">
@@ -232,158 +347,63 @@ export function OrdersList({
                       {o.side}
                     </td>
                     <td className="num px-2 py-1 text-right align-top">{formatQty(o.qty)}</td>
-                    <td
-                      className="num px-2 py-1 align-top text-text-1"
-                      data-testid="open-order-type"
-                    >
-                      {typeLabel(o)}
+                    <td className="num px-2 py-1 align-top text-text-1">{typeLabel(o)}</td>
+                    <td className="whitespace-nowrap px-2 py-1 align-top">
+                      {o.status === 'REJECTED' ? (
+                        <span data-testid="reject-status">
+                          <StatusChip status={o.status} />
+                        </span>
+                      ) : (
+                        <StatusChip status={o.status} />
+                      )}
                     </td>
-                    <td
-                      className="num px-2 py-1 align-top text-text-1"
-                      data-testid="open-order-held"
-                    >
-                      {heldLabel(o) ?? '—'}
-                    </td>
-                    <td
-                      className="num whitespace-nowrap px-2 py-1 align-top text-text-1"
-                      data-testid="open-order-expires"
-                    >
-                      {o.expiresAt === null ? '—' : formatUtc(o.expiresAt)}
-                    </td>
-                    <td className="px-2 py-1 align-top">
-                      <button
-                        type="button"
-                        data-testid="cancel-button"
-                        disabled={busy.has(o.id)}
-                        aria-busy={busy.has(o.id)}
-                        aria-label={`Cancel ${o.side === 'BUY' ? 'buy' : 'sell'} ${formatQty(o.qty)} ${o.symbol} limit order`}
-                        onClick={() => void cancel(o)}
-                        className={secondaryButtonClass}
-                      >
-                        {busy.has(o.id) ? 'Cancelling…' : 'Cancel'}
-                      </button>
+                    <td className="px-2 py-1 align-top text-text-1" data-testid="order-result">
+                      {o.status === 'FILLED' && o.execution !== null ? (
+                        <span className="num">
+                          {formatQty(o.execution.qty)} @ {formatPrice(o.execution.price)} · notional{' '}
+                          {formatMoney(o.execution.notional)} · fee {formatMoney(o.execution.fee)}
+                        </span>
+                      ) : o.status === 'REJECTED' ? (
+                        <span data-testid="reject-reason">{rejectMessage(o.rejectCode)}</span>
+                      ) : o.status === 'ACCEPTED' ? (
+                        <span>Resting until filled, cancelled or expired.</span>
+                      ) : o.status === 'CANCELLED' ? (
+                        <span>Cancelled by you. Nothing was bought or sold.</span>
+                      ) : (
+                        <span>Expired. Nothing was bought or sold.</span>
+                      )}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        )}
-      </section>
-
-      <h2 className="mb-2 text-[16px] font-semibold leading-[22px] text-text-0">History</h2>
-      <div
-        className="relative overflow-x-auto rounded-md border border-line bg-bg-1"
-        role="region"
-        aria-label="Orders table"
-        tabIndex={0}
-      >
-        <table
-          className="w-full min-w-[640px] border-collapse text-[12px] leading-4"
-          data-testid="orders-table"
-        >
-          <caption className="sr-only">Your orders, newest first</caption>
-          <thead className="bg-bg-2">
-            <tr>
-              <th scope="col" className={TH}>
-                Time
-              </th>
-              <th scope="col" className={TH}>
-                Symbol
-              </th>
-              <th scope="col" className={TH}>
-                Side
-              </th>
-              <th scope="col" className={`${TH} text-right`}>
-                Qty
-              </th>
-              <th scope="col" className={TH}>
-                Type
-              </th>
-              <th scope="col" className={TH}>
-                Status
-              </th>
-              <th scope="col" className={TH}>
-                Result
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((o) => (
-              <tr
-                key={o.id}
-                data-testid="order-row"
-                data-status={o.status}
-                className="border-t border-line hover:bg-bg-3"
+          {list.error === null ? null : (
+            <div className="mt-3">
+              <Alert kind="error" support={list.error.support}>
+                {list.error.message}
+              </Alert>
+            </div>
+          )}
+          {list.hasMore ? (
+            <div className="mt-3 text-center">
+              <button
+                type="button"
+                onClick={() => void list.loadMore()}
+                disabled={list.loading}
+                aria-busy={list.loading}
+                data-testid="load-more"
+                className={secondaryButtonClass}
               >
-                <td className="num whitespace-nowrap px-2 py-1 align-top text-text-1">
-                  {formatUtcShort(o.createdAt)}
-                </td>
-                <th scope="row" className="px-2 py-1 text-left align-top font-semibold text-text-0">
-                  {o.symbol}
-                </th>
-                <td
-                  className={`px-2 py-1 align-top font-medium ${o.side === 'BUY' ? 'text-up' : 'text-down'}`}
-                >
-                  <span aria-hidden="true">{o.side === 'BUY' ? '▲ ' : '▼ '}</span>
-                  {o.side}
-                </td>
-                <td className="num px-2 py-1 text-right align-top">{formatQty(o.qty)}</td>
-                <td className="num px-2 py-1 align-top text-text-1">{typeLabel(o)}</td>
-                <td className="whitespace-nowrap px-2 py-1 align-top">
-                  {o.status === 'REJECTED' ? (
-                    <span data-testid="reject-status">
-                      <StatusChip status={o.status} />
-                    </span>
-                  ) : (
-                    <StatusChip status={o.status} />
-                  )}
-                </td>
-                <td className="px-2 py-1 align-top text-text-1" data-testid="order-result">
-                  {o.status === 'FILLED' && o.execution !== null ? (
-                    <span className="num">
-                      {formatQty(o.execution.qty)} @ {formatPrice(o.execution.price)} · notional{' '}
-                      {formatMoney(o.execution.notional)} · fee {formatMoney(o.execution.fee)}
-                    </span>
-                  ) : o.status === 'REJECTED' ? (
-                    <span data-testid="reject-reason">{rejectMessage(o.rejectCode)}</span>
-                  ) : o.status === 'ACCEPTED' ? (
-                    <span>Resting until filled, cancelled or expired.</span>
-                  ) : o.status === 'CANCELLED' ? (
-                    <span>Cancelled by you. Nothing was bought or sold.</span>
-                  ) : (
-                    <span>Expired. Nothing was bought or sold.</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-      {list.error === null ? null : (
-        <div className="mt-3">
-          <Alert kind="error" support={list.error.support}>
-            {list.error.message}
-          </Alert>
-        </div>
-      )}
-      {list.hasMore ? (
-        <div className="mt-3 text-center">
-          <button
-            type="button"
-            onClick={() => void list.loadMore()}
-            disabled={list.loading}
-            aria-busy={list.loading}
-            data-testid="load-more"
-            className={secondaryButtonClass}
-          >
-            {list.loading ? 'Loading…' : list.error === null ? 'Load more' : 'Try again'}
-          </button>
-        </div>
-      ) : (
-        <p className="mt-3 text-center text-[12px] text-text-2" data-testid="end-of-list">
-          That is every order.
-        </p>
+                {list.loading ? 'Loading…' : list.error === null ? 'Load more' : 'Try again'}
+              </button>
+            </div>
+          ) : (
+            <p className="mt-3 text-center text-[12px] text-text-2" data-testid="end-of-list">
+              That is every order.
+            </p>
+          )}
+        </>
       )}
     </div>
   );

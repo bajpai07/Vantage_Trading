@@ -65,6 +65,7 @@ export default async function InstrumentPage({ params }: { params: Promise<{ sym
 
   return (
     <InstrumentView
+      key={symbol}
       instrument={instrument.data}
       initialQuote={quote}
       market={market.ok ? market.data : null}

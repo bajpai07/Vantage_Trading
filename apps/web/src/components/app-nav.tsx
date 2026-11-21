@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 
 export const NAV_ITEMS = [
   { href: '/portfolio', label: 'Portfolio' },
+  { href: '/instruments/AAPL', label: 'Trade', match: '/instruments' },
   { href: '/orders', label: 'Orders' },
   { href: '/activity', label: 'Activity' },
 ] as const;
@@ -23,7 +24,8 @@ export function AppNav() {
     >
       <ul className="flex w-full md:w-auto md:gap-1">
         {NAV_ITEMS.map((item) => {
-          const current = pathname === item.href || pathname.startsWith(`${item.href}/`);
+          const base = 'match' in item ? item.match : item.href;
+          const current = pathname === base || pathname.startsWith(`${base}/`);
           return (
             <li key={item.href} className="flex-1 md:flex-none">
               <Link

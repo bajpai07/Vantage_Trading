@@ -91,11 +91,12 @@ export function FeedBanner({ feed }: { feed: FeedInfoResponse | null }) {
         <div
           role="status"
           data-testid="feed-banner"
-          className={`border-b border-line px-4 py-1.5 text-center text-[12px] font-medium ${
-            b.tone === 'warn' ? 'bg-bg-2 text-warn' : 'bg-bg-2 text-info'
+          className={`flex min-h-[var(--banner-h)] flex-wrap items-center justify-center gap-x-5 gap-y-0.5 border-b border-line px-4 py-1 text-center text-[12px] font-semibold ${
+            b.tone === 'warn' ? 'bg-sim-bg uppercase text-sim-fg' : 'bg-bg-2 text-info'
           }`}
         >
-          {b.text}
+          <span>{b.text}</span>
+          {b.tone === 'warn' ? <span>Virtual money, not real trading</span> : null}
         </div>
       )}
       {notice === null ? null : (

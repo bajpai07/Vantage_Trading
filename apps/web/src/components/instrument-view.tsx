@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import type {
+  CandleInterval,
   InstrumentItem,
   MarketStatusResponse,
   OrderResponse,
@@ -14,11 +15,16 @@ import { formatMoney, formatPrice, formatQty, isZeroDecimal } from '../lib/money
 import { ASSET_CLASS_LABELS, statusView } from '../lib/market';
 import { rejectMessage } from '../lib/reject-copy';
 import { useDepthPoll } from '../lib/use-depth-poll';
+import { useWatchlist } from '../lib/use-watchlist';
 import { useQuotePoll } from '../lib/use-quote-poll';
 import type { OrderKind } from '../lib/ticket';
+import { BottomPanel } from './bottom-panel';
+import { ChartPanel } from './chart-panel';
 import { DepthBook } from './depth-book';
 import { OrderTicket } from './order-ticket';
 import { QuotePanel } from './quote-panel';
+import { usePortfolio } from './terminal-chrome';
+import { WatchlistRail, WatchStar } from './watchlist-rail';
 import { Alert, EmptyState } from './ui';
 
 /** The status badge of an instrument: a word and a glyph, never colour alone. */
@@ -148,8 +154,10 @@ function RecentOrders({
 }
 
 /**
- * The instrument page body: header, an explanation of any non-ACTIVE status, the live quote panel (D-73), the user's
- * position and recent orders in this symbol. The first render comes from the server; the quote then refreshes itself.
+ * The trading terminal (M9a, Terminal.dc.html): watchlist rail, chart centre, order ticket and book on the right, positions /
+ * open orders / history underneath. The first render comes from the server; the quote then refreshes itself. Layout:
+ * >= 1280 px three columns (270 | 1fr | 330); 1024 to 1279 a narrow symbol-only rail, the ticket and the book under the chart;
+ * below 1024 one column (the phone layout is M9b: only "no horizontal scroll" is guaranteed there).
  */
 export function InstrumentView(props: {
   instrument: InstrumentItem;
@@ -162,61 +170,104 @@ export function InstrumentView(props: {
   const { instrument } = props;
   const poll = useQuotePoll(instrument.symbol, props.initialQuote, props.quotePollMs);
   const depth = useDepthPoll(instrument.symbol, props.quotePollMs);
+  const watchlist = useWatchlist();
+  const portfolio = usePortfolio();
   const [ticketKind, setTicketKind] = useState<OrderKind>('MARKET');
+  const [interval, setInterval] = useState<CandleInterval>('15m');
   const [pick, setPick] = useState<{ price: string; seq: number } | null>(null);
   const sv = statusView(instrument.status);
   return (
     <div data-testid="instrument-page" data-symbol={instrument.symbol}>
-      <div className="mb-3">
-        <h1 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[20px] font-semibold leading-[26px] text-text-0">
-          <span className="num" data-testid="instrument-symbol">
-            {instrument.symbol}
-          </span>
-          <span className="text-[14px] font-normal text-text-1" data-testid="instrument-name">
-            {instrument.name}
-          </span>
-        </h1>
-        <p className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-2">
-          <span>
-            {instrument.exchange} · {ASSET_CLASS_LABELS[instrument.assetClass]} ·{' '}
-            {instrument.currency}
-          </span>
-          <StatusBadge status={instrument.status} />
-        </p>
-      </div>
       {sv.explanation === null ? null : (
-        <div className="mb-3" data-testid="status-explanation">
+        <div className="px-4 pt-3 lg:px-6" data-testid="status-explanation">
           <Alert kind="info">{sv.explanation}</Alert>
         </div>
       )}
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,360px)]">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[88px_minmax(0,1fr)] xl:grid-cols-[270px_minmax(0,1fr)_330px]">
+        <aside
+          aria-label="Watchlist"
+          data-testid="terminal-rail"
+          className="order-3 border-line bg-bg-1 lg:order-none lg:row-span-2 lg:border-r xl:row-span-1"
+        >
+          <WatchlistRail
+            current={instrument.symbol}
+            currentName={instrument.name}
+            pollMs={props.quotePollMs}
+            watchlist={watchlist}
+          />
+        </aside>
+        <section
+          aria-label="Chart"
+          data-testid="terminal-center"
+          className="order-1 flex min-w-0 flex-col gap-3 px-4 py-4 lg:order-none lg:px-5"
+        >
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+            <h1 className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[22px] font-semibold leading-7 text-text-0">
+              <span className="num" data-testid="instrument-symbol">
+                {instrument.symbol}
+              </span>
+              <span className="text-[14px] font-normal text-text-1" data-testid="instrument-name">
+                {instrument.name}
+              </span>
+            </h1>
+            <WatchStar
+              symbol={instrument.symbol}
+              on={watchlist.state.symbols.includes(instrument.symbol)}
+              disabled={watchlist.full}
+              onToggle={() => watchlist.toggle(instrument.symbol, instrument.name)}
+            />
+            <p className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-2">
+              <span>
+                {instrument.exchange} · {ASSET_CLASS_LABELS[instrument.assetClass]} ·{' '}
+                {instrument.currency}
+              </span>
+              <StatusBadge status={instrument.status} />
+            </p>
+          </div>
           <QuotePanel
             instrument={instrument}
             quote={poll.quote}
             market={props.market}
             refreshFailed={poll.refreshFailed}
           />
-          <DepthBook
-            symbol={instrument.symbol}
-            state={depth.state}
-            canPick={ticketKind === 'LIMIT'}
-            onPick={(price) => setPick((p) => ({ price, seq: (p?.seq ?? 0) + 1 }))}
+          <ChartPanel
+            instrument={instrument}
+            quote={poll.quote}
+            interval={interval}
+            onIntervalChange={setInterval}
           />
-          <PositionPanel symbol={instrument.symbol} position={props.position} />
           <RecentOrders symbol={instrument.symbol} orders={props.orders} />
-        </div>
-        <OrderTicket
-          instrument={instrument}
-          quote={poll.quote}
-          refreshFailed={poll.refreshFailed}
-          refreshQuote={poll.refreshNow}
-          position={props.position}
-          onKindChange={setTicketKind}
-          pricePick={pick}
-          onSettled={depth.refreshNow}
-        />
+        </section>
+        <aside
+          aria-label="Order ticket and book"
+          data-testid="terminal-right"
+          className="order-2 grid min-w-0 gap-4 border-line bg-bg-1 px-4 py-4 lg:order-none lg:col-start-2 lg:grid-cols-2 xl:col-start-3 xl:row-start-1 xl:grid-cols-1 xl:border-l xl:px-5"
+        >
+          <OrderTicket
+            instrument={instrument}
+            quote={poll.quote}
+            refreshFailed={poll.refreshFailed}
+            refreshQuote={poll.refreshNow}
+            position={props.position}
+            onKindChange={setTicketKind}
+            pricePick={pick}
+            onSettled={() => {
+              depth.refreshNow();
+              portfolio.refreshNow();
+            }}
+          />
+          <div className="space-y-4">
+            <PositionPanel symbol={instrument.symbol} position={props.position} />
+            <DepthBook
+              symbol={instrument.symbol}
+              state={depth.state}
+              canPick={ticketKind === 'LIMIT'}
+              onPick={(price) => setPick((p) => ({ price, seq: (p?.seq ?? 0) + 1 }))}
+            />
+          </div>
+        </aside>
       </div>
+      <BottomPanel current={instrument.symbol} />
     </div>
   );
 }

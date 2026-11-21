@@ -4,31 +4,44 @@
   color-scheme: dark;
 
   /* surfaces (navy-black ramp) */
-  --bg-0: #070a12;
-  --bg-1: #0b1020;
-  --bg-2: #10172a;
-  --bg-3: #16203a;
-  --bg-4: #1d2a4a;
-  --line: #1e2845;
-  --line-strong: #2b3862;
+  --bg-0: #0b0e13;
+  --bg-1: #0f131b;
+  --bg-2: #121822;
+  --bg-3: #1a2332;
+  --bg-4: #1e2a44;
+  --line: #232c3a;
+  --line-strong: #2b3547;
 
   /* text */
-  --text-0: #f2f5fb;
-  --text-1: #c3cce0;
-  --text-2: #8591ad;
-  --text-3: #5f6b88;
+  --text-0: #e8ecf2;
+  --text-1: #c3cad6;
+  --text-2: #98a2b3;
+  --text-3: #667184;
 
   /* accents and semantics */
-  --accent: #3d7bff;
-  --accent-hi: #6a9bff;
+  --accent: #4f7cff;
+  --accent-hi: #7da0ff;
   --violet: #8b6cff;
-  --up: #27c28a;
-  --up-bg: rgba(39, 194, 138, 0.14);
-  --down: #f2566b;
-  --down-bg: rgba(242, 86, 107, 0.14);
-  --warn: #e8b24a;
+  --up: #3ddc97;
+  --up-bg: rgba(61, 220, 151, 0.14);
+  --down: #ff7a7a;
+  --down-bg: rgba(255, 122, 122, 0.14);
+  --warn: #f5b93b;
   --stale: #e8884a;
   --info: #4bb5e8;
+
+  /* M9a terminal (Terminal.dc.html): primary buttons, down text on dark, the simulated-data banner, side buttons, status chips */
+  --primary: #2f5fe3;
+  --down-text: #ff9a9a;
+  --sim-bg: #f5b93b;
+  --sim-fg: #1a1300;
+  --buy: #1f6b4d;
+  --sell: #a03a47;
+  --chip-up: #1b3a2e;
+  /* chart (read by the chart wrapper through getComputedStyle, so no colour is written in code) */
+  --chart-grid: #1b2432;
+  --up-bar: rgba(61, 220, 151, 0.45);
+  --down-bar: rgba(255, 122, 122, 0.45);
 
   /* typography */
   --font-ui: 'Inter Variable', Inter, system-ui, -apple-system, 'Segoe UI', sans-serif;

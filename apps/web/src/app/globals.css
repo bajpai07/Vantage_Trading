@@ -24,11 +24,20 @@
   --color-warn: var(--warn);
   --color-stale: var(--stale);
   --color-info: var(--info);
+  --color-primary: var(--primary);
+  --color-down-text: var(--down-text);
+  --color-sim-bg: var(--sim-bg);
+  --color-sim-fg: var(--sim-fg);
+  --color-buy: var(--buy);
+  --color-sell: var(--sell);
+  --color-chip-up: var(--chip-up);
   --font-sans: var(--font-ui);
   --font-mono: var(--font-num);
 }
 
 html {
+  /* the height of the persistent simulated-data banner: the sticky terminal header sits right under it */
+  --banner-h: 2rem;
   background: var(--bg-0);
   color: var(--text-1);
 }
