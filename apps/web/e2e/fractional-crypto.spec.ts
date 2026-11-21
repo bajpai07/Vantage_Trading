@@ -313,6 +313,7 @@ test.describe('4. one order, however many clicks; keyboard only; accessibility',
       throw new Error(
         `the Review button stayed disabled. field value: ${JSON.stringify(typed)}; url: ${page.url()}; ticket-reason: ${JSON.stringify(reason)}; estimate: ${JSON.stringify(estimate)}; preview requests: ${JSON.stringify(previews)}
 ${(e as Error).message}`,
+        { cause: e },
       );
     }
     await page.keyboard.press('Tab'); // Max
