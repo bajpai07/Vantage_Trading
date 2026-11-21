@@ -210,5 +210,6 @@ export function buyFillFromReserveLegs(input: BuyFillFromReserveInput): Leg[] {
 export * from './errors.js';
 export * from './lots.js';
 export * from './limit-order.js';
+export * from './depth.js';
 export * from './market-order.js';
 export * from './valuation.js';
