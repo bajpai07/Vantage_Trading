@@ -19,7 +19,11 @@ export function Footer({ feed }: { feed?: FeedInfoResponse | null }) {
           This is a demo: prices are simulated and nothing here is real.
         </span>
       ) : null}{' '}
-      <Link href="/third-party-notices" data-testid="notices-link">
+      <Link
+        href="/third-party-notices"
+        data-testid="notices-link"
+        className="underline underline-offset-2"
+      >
         Third-party notices
       </Link>
     </footer>

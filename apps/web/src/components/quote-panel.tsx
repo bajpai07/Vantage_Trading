@@ -103,6 +103,9 @@ export function QuotePanel(props: {
         </div>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[12px] text-text-2">
+        <span>
+          Source: <span className="num text-text-1">{quote.source}</span>
+        </span>
         <span data-testid="quote-as-of">
           {quote.asOf === null ? (
             'No quote available'

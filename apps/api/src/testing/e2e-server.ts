@@ -40,6 +40,10 @@ const h = await createOrdersHarness(db, {
     // M8b-1: the limit-order matcher runs in the e2e API (the quotes it evaluates are the ones the control server pins)
     MATCHER: 'on',
     MATCHER_INTERVAL_MS: '300',
+    // M9a: the e2e web app polls every second (production: 5 s) and every test shares one address, so the per-minute allowances of the
+    // read-only depth and candle routes are lifted for e2e only (the limiter itself is tested in depth.int.test.ts)
+    DEPTH_RATE_LIMIT_PER_MINUTE: '100000',
+    CANDLES_RATE_LIMIT_PER_MINUTE: '100000',
   },
 });
 await h.app.listen(apiPort, '127.0.0.1');

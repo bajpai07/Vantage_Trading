@@ -320,37 +320,39 @@ export function ChartPanel(props: {
                 onHover={setHover}
               />
             )}
-            <table className="sr-only" data-testid="chart-a11y-table">
-              <caption>
-                Latest {String(A11Y_ROWS)} {interval} candles of {symbol} (simulated data), newest
-                first
-              </caption>
-              <thead>
-                <tr>
-                  <th scope="col">Open time</th>
-                  <th scope="col">Open</th>
-                  <th scope="col">High</th>
-                  <th scope="col">Low</th>
-                  <th scope="col">Close</th>
-                  <th scope="col">Volume</th>
-                </tr>
-              </thead>
-              <tbody>
-                {items
-                  .slice(-A11Y_ROWS)
-                  .reverse()
-                  .map((c) => (
-                    <tr key={c.t}>
-                      <th scope="row">{formatUtc(c.t)}</th>
-                      <td>{c.o}</td>
-                      <td>{c.h}</td>
-                      <td>{c.l}</td>
-                      <td>{c.c}</td>
-                      <td>{c.v}</td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
+            <div className="sr-only">
+              <table data-testid="chart-a11y-table">
+                <caption>
+                  Latest {String(A11Y_ROWS)} {interval} candles of {symbol} (simulated data), newest
+                  first
+                </caption>
+                <thead>
+                  <tr>
+                    <th scope="col">Open time</th>
+                    <th scope="col">Open</th>
+                    <th scope="col">High</th>
+                    <th scope="col">Low</th>
+                    <th scope="col">Close</th>
+                    <th scope="col">Volume</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {items
+                    .slice(-A11Y_ROWS)
+                    .reverse()
+                    .map((c) => (
+                      <tr key={c.t}>
+                        <th scope="row">{formatUtc(c.t)}</th>
+                        <td>{c.o}</td>
+                        <td>{c.h}</td>
+                        <td>{c.l}</td>
+                        <td>{c.c}</td>
+                        <td>{c.v}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>

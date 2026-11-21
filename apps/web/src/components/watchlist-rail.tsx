@@ -130,7 +130,7 @@ export function WatchlistRail({
                   <span className="flex min-w-0 items-center gap-2">
                     {quote === undefined ? null : <FreshnessDot state={quote.freshness} />}
                     <span className="min-w-0">
-                      <span className="block truncate font-semibold">{symbol}</span>
+                      <span className="block truncate font-semibold text-text-0">{symbol}</span>
                       <span className="hidden truncate text-[12px] text-text-2 xl:block">
                         {name ?? ''}
                         {quote?.changeBasis === 'ROLLING_24H' ? ' · 24h' : ''}

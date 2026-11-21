@@ -233,7 +233,7 @@ export function InstrumentView(props: {
           <Alert kind="info">{sv.explanation}</Alert>
         </div>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-[88px_minmax(0,1fr)] xl:grid-cols-[270px_minmax(0,1fr)_330px]">
+      <div className="grid grid-cols-1 lg:grid-cols-[112px_minmax(0,1fr)] xl:grid-cols-[270px_minmax(0,1fr)_330px]">
         <aside
           aria-label="Watchlist"
           data-testid="terminal-rail"

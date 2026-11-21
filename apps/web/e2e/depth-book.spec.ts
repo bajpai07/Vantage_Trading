@@ -174,7 +174,11 @@ test.describe('accessibility, keyboard and phone width', () => {
     await expect(page.getByTestId('depth-ready')).toBeVisible({ timeout: 15_000 });
     expect(await serious(page)).toEqual([]);
     await expect(page.getByRole('table', { name: /Simulated order book/ })).toBeVisible();
-    await expect(page.getByRole('columnheader')).toHaveText(['Price (USD)', 'Size', 'Yours']);
+    await expect(page.getByTestId('depth-table').getByRole('columnheader')).toHaveText([
+      'Price (USD)',
+      'Size',
+      'Yours',
+    ]);
 
     // keyboard only: focus a price button with Tab, activate with Enter (Limit mode), the string lands in the field
     await page.locator('label:has([data-testid="kind-limit"])').click();
