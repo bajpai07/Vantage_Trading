@@ -11,6 +11,7 @@ import {
   register,
   setQuote,
   uniqueEmail,
+  shotPath,
 } from './helpers';
 
 test.beforeEach(async () => {
@@ -134,7 +135,7 @@ test.describe('6. accessibility', () => {
     await page.goto('/portfolio');
     expect(await serious(page), '375 px portfolio').toEqual([]);
     await page.screenshot({
-      path: '../../docs/phase-reports/m6a/portfolio-375.png',
+      path: shotPath('../../docs/phase-reports/m6a/portfolio-375.png'),
       fullPage: true,
     });
   });

@@ -2,7 +2,15 @@
 // its freshness and the server-computed spread, status explanations, position and recent orders, polling.
 import { expect, test } from '@playwright/test';
 import type { Page } from '@playwright/test';
-import { BUY_AAPL_10, clearQuote, control, placeOrder, register, setQuote } from './helpers';
+import {
+  BUY_AAPL_10,
+  clearQuote,
+  control,
+  placeOrder,
+  register,
+  setQuote,
+  shotPath,
+} from './helpers';
 
 const OPEN = '2026-11-10T15:00:00.000Z';
 test.beforeEach(async () => {
@@ -130,7 +138,7 @@ test.describe('instrument page', () => {
       'Simulated market data — not real prices · Demo mode — virtual money, no real trading',
     );
     await page.screenshot({
-      path: '../../docs/phase-reports/m6b/instrument-1280.png',
+      path: shotPath('../../docs/phase-reports/m6b/instrument-1280.png'),
       fullPage: true,
     });
   });

@@ -130,3 +130,12 @@ export async function apiGet<T = Record<string, unknown>>(
 export async function enterQty(page: Page, qty: string): Promise<void> {
   await page.getByTestId('ticket-qty').fill(qty);
 }
+
+/**
+ * Where a documentation screenshot is written (M9a T0a). The committed phase-report images are rewritten ONLY when
+ * UPDATE_SCREENSHOTS=1; a normal run writes them under test-results/ (git-ignored), so it leaves `git status` clean.
+ */
+export function shotPath(committedPath: string): string {
+  if (process.env.UPDATE_SCREENSHOTS === '1') return committedPath;
+  return `test-results/screenshots/${committedPath.replace(/^(\.\.\/)+docs\/phase-reports\//, '')}`;
+}

@@ -15,6 +15,7 @@ import {
   reconcile,
   register,
   setQuote,
+  shotPath,
 } from './helpers';
 
 const OPEN = '2026-11-10T15:00:00.000Z';
@@ -86,13 +87,13 @@ test.describe('1. search, estimate and a fill (golden vector A)', () => {
       'Estimate — final price is decided when the order executes.',
     );
     await expect(reviewButton(page)).toBeEnabled();
-    await page.screenshot({ path: `${SHOTS}/ticket-estimate-1280.png`, fullPage: true });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-estimate-1280.png`), fullPage: true });
 
     await reviewButton(page).click();
     await expect(page.getByTestId('review-summary')).toContainText('Buy 10 AAPL');
     await expect(page.getByTestId('review-cash-after')).toHaveText('8,099.60');
     await expect(page.getByTestId('confirm-button')).toHaveText('Buy 10 AAPL');
-    await page.screenshot({ path: `${SHOTS}/ticket-review-1280.png` });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-review-1280.png`) });
     await page.getByTestId('confirm-button').click();
 
     await expect(page.getByTestId('result-filled')).toBeVisible();
@@ -101,7 +102,7 @@ test.describe('1. search, estimate and a fill (golden vector A)', () => {
     await expect(page.getByTestId('result-notional')).toHaveText('1,900.40');
     await expect(page.getByTestId('result-fee')).toHaveText('0.00');
     await expect(page.getByTestId('result-cash')).toHaveText('8,099.60');
-    await page.screenshot({ path: `${SHOTS}/ticket-filled-1280.png` });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-filled-1280.png`) });
     await page.getByTestId('result-close').click();
 
     // the position and recent orders on the page update without a reload
@@ -224,7 +225,7 @@ test.describe('4. a network failure after the request was sent', () => {
       '/orders',
     );
     await expect(page.getByTestId('confirm-button')).toHaveText('Retry safely');
-    await page.screenshot({ path: `${SHOTS}/ticket-retry-1280.png` });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-retry-1280.png`) });
 
     await page.getByTestId('confirm-button').click();
     await expect(page.getByTestId('result-filled')).toBeVisible();
@@ -433,7 +434,7 @@ test.describe('8. PRICE_MOVED', () => {
     await expect(page.getByTestId('price-moved-new-price')).toHaveText('193.00', {
       timeout: 10_000,
     });
-    await page.screenshot({ path: `${SHOTS}/ticket-price-moved-1280.png` });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-price-moved-1280.png`) });
     await page.waitForTimeout(1500); // nothing is resubmitted by itself
     expect(posts.keys).toHaveLength(1);
     expect(await counts(email)).toEqual({ orders: '1', executions: '0' });
@@ -608,12 +609,12 @@ test.describe('10. accessibility and the keyboard', () => {
     expect(overflow).toBeLessThanOrEqual(0);
     const box = await reviewButton(page).boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
-    await page.screenshot({ path: `${SHOTS}/ticket-375.png`, fullPage: true });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-375.png`), fullPage: true });
     await reviewButton(page).click();
     await expect(dialog(page)).toBeVisible();
     const dbox = await dialog(page).boundingBox();
     expect((dbox?.x ?? -1) >= 0 && (dbox?.x ?? 0) + (dbox?.width ?? 999) <= 375).toBe(true);
-    await page.screenshot({ path: `${SHOTS}/ticket-review-375.png` });
+    await page.screenshot({ path: shotPath(`${SHOTS}/ticket-review-375.png`) });
   });
 
   test('the quantity field takes digits and one dot only (M8): letters, signs and exponents never get in, a paste that is not a plain decimal is refused; a fraction on a whole-share stock is kept and blocked with the step message', async ({

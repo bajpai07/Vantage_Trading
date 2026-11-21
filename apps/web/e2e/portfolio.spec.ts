@@ -2,7 +2,15 @@
 // incomplete notice, polling refresh, and the FIXTURE banner. The API runs with an injected clock (Tuesday
 // 2026-11-10 10:00 New York, market open) so quote times are deterministic: a quote is "900 s old" = 14:45 UTC.
 import { expect, test } from '@playwright/test';
-import { BUY_AAPL_10, clearQuote, control, placeOrder, register, setQuote } from './helpers';
+import {
+  BUY_AAPL_10,
+  clearQuote,
+  control,
+  placeOrder,
+  register,
+  setQuote,
+  shotPath,
+} from './helpers';
 
 const OPEN = '2026-11-10T15:00:00.000Z';
 const resetMarket = async (): Promise<void> => {
@@ -29,7 +37,7 @@ test.describe('1. register lands on an empty portfolio', () => {
     );
     await expect(page.getByTestId('incomplete-notice')).toHaveCount(0);
     await page.screenshot({
-      path: '../../docs/phase-reports/m6a/portfolio-empty-1280.png',
+      path: shotPath('../../docs/phase-reports/m6a/portfolio-empty-1280.png'),
       fullPage: true,
     });
   });
@@ -45,7 +53,7 @@ test.describe('1. register lands on an empty portfolio', () => {
     await expect(banner.getByRole('button')).toHaveCount(0);
     await page.reload();
     await expect(banner).toBeVisible();
-    await page.screenshot({ path: '../../docs/phase-reports/m6a/login-1280.png' });
+    await page.screenshot({ path: shotPath('../../docs/phase-reports/m6a/login-1280.png') });
   });
 });
 
@@ -85,7 +93,7 @@ test.describe('2. a position placed through the API, with the right strings, bad
     await page.getByText('Exact amounts').click();
     await expect(page.getByTestId('exact-amounts')).toContainText('10049.60');
     await page.screenshot({
-      path: '../../docs/phase-reports/m6a/portfolio-position-1280.png',
+      path: shotPath('../../docs/phase-reports/m6a/portfolio-position-1280.png'),
       fullPage: true,
     });
   });
@@ -185,7 +193,7 @@ test.describe('3. honesty: no price, stale and closed are never dressed up', () 
       'Excludes positions without a price',
     );
     await page.screenshot({
-      path: '../../docs/phase-reports/m6a/portfolio-unavailable-1280.png',
+      path: shotPath('../../docs/phase-reports/m6a/portfolio-unavailable-1280.png'),
       fullPage: true,
     });
 

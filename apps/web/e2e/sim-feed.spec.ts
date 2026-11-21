@@ -3,7 +3,16 @@
 // DEMO_MODE=true with an injected clock; /sim-refresh republishes the real simulated quotes at that clock. No internet.
 import AxeBuilder from '@axe-core/playwright';
 import { expect, test } from '@playwright/test';
-import { apiGet, control, counts, enterQty, placeOrder, reconcile, register } from './helpers';
+import {
+  apiGet,
+  control,
+  counts,
+  enterQty,
+  placeOrder,
+  reconcile,
+  register,
+  shotPath,
+} from './helpers';
 
 const OPEN = '2026-11-10T15:00:00.000Z';
 const M7A = '../../docs/phase-reports/m7a'; // screenshots
@@ -107,7 +116,7 @@ test.describe('a SIM stock, through the ticket (exact strings)', () => {
     await expect(page.getByTestId('result-price')).toHaveText('187.10');
     await expect(page.getByTestId('result-cash')).toHaveText('8,129.00');
     await expect(page.getByTestId('result-filled')).toContainText('(SIM)'); // the quote source of the fill
-    await page.screenshot({ path: `${M7A}/sim-stock-filled-1280.png` });
+    await page.screenshot({ path: shotPath(`${M7A}/sim-stock-filled-1280.png`) });
     await page.getByTestId('result-close').click();
     await expect(page.getByTestId('position-qty')).toHaveText('10');
     await expect(page.getByTestId('position-avg-cost')).toHaveText('187.10');
@@ -153,7 +162,7 @@ test.describe('crypto is tradable since M8 (it was display-only in M7a)', () => 
     await expect(reason).not.toContainText('not tradable yet');
     await page.locator('label:has([data-testid="side-sell"])').click();
     await expect(reason).toContainText('You do not own any BTC-USD to sell');
-    await page.screenshot({ path: `${M8}/crypto-instrument-1280.png`, fullPage: true });
+    await page.screenshot({ path: shotPath(`${M8}/crypto-instrument-1280.png`), fullPage: true });
 
     const axe = await new AxeBuilder({ page })
       .withTags(['wcag2a', 'wcag2aa', 'wcag21a', 'wcag21aa', 'wcag22aa'])

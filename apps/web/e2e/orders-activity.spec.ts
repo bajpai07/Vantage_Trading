@@ -1,6 +1,6 @@
 // Orders, fills and account activity end to end: plain-language rejects, cursor "load more", honest empty states.
 import { expect, test } from '@playwright/test';
-import { BUY_AAPL_10, control, placeOrder, register, setQuote } from './helpers';
+import { BUY_AAPL_10, control, placeOrder, register, setQuote, shotPath } from './helpers';
 
 test.beforeEach(async () => {
   await control('/clock', { iso: '2026-11-10T15:00:00.000Z' });
@@ -54,7 +54,10 @@ test('orders show fills and rejects; every reject reads as a plain sentence, nev
     expect(text).not.toContain(code);
   }
   await expect(page.getByTestId('end-of-list')).toBeVisible();
-  await page.screenshot({ path: '../../docs/phase-reports/m6a/orders-1280.png', fullPage: true });
+  await page.screenshot({
+    path: shotPath('../../docs/phase-reports/m6a/orders-1280.png'),
+    fullPage: true,
+  });
 });
 
 test('"load more" pages through 55 orders and 55 fills with no duplicates, newest first', async ({
@@ -107,5 +110,8 @@ test('fills show the price used, the quote behind it and the realised result of 
   await expect(effects.nth(0)).toContainText('+1,949.60'); // proceeds
   await expect(effects.nth(1)).toContainText('−1,900.40'); // cost, with a real minus sign
   await expect(effects.nth(1)).toHaveAttribute('data-direction', 'down');
-  await page.screenshot({ path: '../../docs/phase-reports/m6a/activity-1280.png', fullPage: true });
+  await page.screenshot({
+    path: shotPath('../../docs/phase-reports/m6a/activity-1280.png'),
+    fullPage: true,
+  });
 });

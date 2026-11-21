@@ -2,7 +2,7 @@
 // the API's strings only. The e2e API runs the SIM feed with the NYSE session and an injected clock; /sim-refresh republishes
 // the simulated quotes at that clock. Golden values: market-model candles.test.ts and sim.int.test.ts.
 import { expect, test } from '@playwright/test';
-import { control, register } from './helpers';
+import { control, register, shotPath } from './helpers';
 
 const OPEN = '2026-11-10T15:00:00.000Z';
 const M7B = '../../docs/phase-reports/m7b';
@@ -30,7 +30,7 @@ test.describe('the quote panel', () => {
       "Change since the previous regular session's close.",
     );
     await expect(page.getByTestId('quote-change-basis')).toHaveText('vs previous close');
-    await page.screenshot({ path: `${M7B}/quote-change-stock-1280.png`, fullPage: true });
+    await page.screenshot({ path: shotPath(`${M7B}/quote-change-stock-1280.png`), fullPage: true });
   });
 
   test('crypto: change against the price 24 hours ago (a different basis for the same panel)', async ({
@@ -45,7 +45,10 @@ test.describe('the quote panel', () => {
     await expect(change).toContainText('▲');
     await expect(change).toHaveAttribute('title', 'Change over the last 24 hours.');
     await expect(page.getByTestId('quote-change-basis')).toHaveText('24h');
-    await page.screenshot({ path: `${M7B}/quote-change-crypto-1280.png`, fullPage: true });
+    await page.screenshot({
+      path: shotPath(`${M7B}/quote-change-crypto-1280.png`),
+      fullPage: true,
+    });
     // the bases differ between the two kinds of instrument
     await page.goto('/instruments/AAPL');
     await expect(page.getByTestId('quote-change-basis')).not.toHaveText('24h');
@@ -91,6 +94,6 @@ test.describe('search results', () => {
     await expect(btc).toContainText('BTC-USD');
     await expect(btc.getByTestId('search-change')).toContainText('+4.67%');
     await expect(btc.getByTestId('search-change')).toContainText('▲');
-    await page.screenshot({ path: `${M7B}/search-change-1280.png` });
+    await page.screenshot({ path: shotPath(`${M7B}/search-change-1280.png`) });
   });
 });
