@@ -170,7 +170,7 @@ Web build exit 0 on every run; the full e2e (both profiles) exit 0 after the old
 | matcher tick that fills 1,000 orders (one transaction each)    | 23.6 to 24.7 s (about 24 ms per fill) | 52.1 s (about 52 ms per fill) | none                                         |
 | accept round trips                                             | not measured                          | not measured                  | the prompt asked for them; I did not measure |
 
-The evaluation cost is the engine loop in JavaScript over 5,000 BigInt orders (parse, price, compare), not the database. A cache of the parsed order values, or fewer string conversions in `evaluateOpenOrders`, is the first thing to try if M8b-2 needs it. The 24 ms per fill is the cost of one serialisable transaction with about a dozen statements and four row locks; at 1,000 open orders on one instrument a tick that fills all of them takes longer than the default 1 s interval, which is safe (the timer is chained) but means fills lag.
+The evaluation cost is the engine loop in JavaScript over 5,000 BigInt orders (parse, price, compare), not the database. A cache of the parsed order values, or fewer string conversions in `evaluateOpenOrders`, is the first thing to try if M8b-2 needs it. The 24 ms per fill is the cost of one transaction with about a dozen statements and several row locks; at 1,000 open orders on one instrument a tick that fills all of them takes longer than the default 1 s interval, which is safe (the timer is chained) but means fills lag.
 
 ## 7. Tests
 
