@@ -21,6 +21,8 @@
     "db:status": "node --env-file=.env.infra tools/migrate.mjs status",
     "test:cleanup": "tsx tools/cleanup-test-dbs.ts",
     "verify": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm build && pnpm test:unit && pnpm test:integration",
+    "compose:setup": "node tools/compose-setup.mjs",
+    "compose:smoke": "pnpm build && node tools/compose-smoke.mjs",
     "bench:search": "tsx tools/bench-search.ts",
     "bench:orders": "node --conditions=source --import tsx tools/bench-orders.ts",
     "bench:orders:http": "node tools/bench-orders-http.mjs",

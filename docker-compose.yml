@@ -1,0 +1,76 @@
+# The whole VANTAGE demo in one command (M10, D-110): Postgres 16, the one-shot migrations, the API and the web app.
+#   pnpm compose:setup     (once: writes the untracked .env.compose with random secrets)
+#   docker compose --env-file .env.compose up --build        then open http://localhost:3000
+# Only the web port is published, on 127.0.0.1. Postgres and the API are reachable only on the compose network.
+name: vantage-demo
+
+services:
+  postgres:
+    image: postgres:16.15@sha256:65b16a8b326e0cfbdf33fa7e783f2a0cb352a61448616ccccfd616ef42aa0f65
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_SUPERUSER_PASSWORD:?run pnpm compose:setup}
+      VANTAGE_MIGRATOR_PASSWORD: ${VANTAGE_MIGRATOR_PASSWORD:?run pnpm compose:setup}
+      VANTAGE_APP_PASSWORD: ${VANTAGE_APP_PASSWORD:?run pnpm compose:setup}
+    volumes:
+      - vantage_demo_pgdata:/var/lib/postgresql/data
+      - ./infra/postgres/01-bootstrap.sh:/docker-entrypoint-initdb.d/01-bootstrap.sh:ro
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U postgres -d vantage_dev']
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 5s
+    restart: unless-stopped
+
+  migrate:
+    build: { context: ., target: migrate }
+    image: vantage-migrate:local
+    environment:
+      DATABASE_MIGRATOR_URL: postgres://vantage_migrator:${VANTAGE_MIGRATOR_PASSWORD:?run pnpm compose:setup}@postgres:5432/vantage_dev
+    depends_on:
+      postgres: { condition: service_healthy }
+    restart: 'no'
+
+  api:
+    build: { context: ., target: api }
+    image: vantage-api:local
+    environment:
+      APP_ENV: local
+      LOG_LEVEL: info
+      PORT: '4000'
+      LISTEN_HOST: 0.0.0.0
+      DATABASE_URL: postgres://vantage_app:${VANTAGE_APP_PASSWORD:?run pnpm compose:setup}@postgres:5432/vantage_dev
+      WEB_ORIGIN: http://localhost:${WEB_PORT:-3000}
+      COOKIE_SECURE: 'false'
+      MARKET_DATA_SOURCE: SIM
+      CRYPTO_FEED: ${CRYPTO_FEED:-sim}
+      SIM_SESSION: ${SIM_SESSION:-ALWAYS_OPEN}
+      SIM_SEED: ${SIM_SEED:-vantage-demo-1}
+      DEMO_MODE: 'true'
+      MATCHER: ${MATCHER:-on}
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-172.16.0.0/12,10.0.0.0/8,192.168.0.0/16}
+    depends_on:
+      postgres: { condition: service_healthy }
+      migrate: { condition: service_completed_successfully }
+    stop_grace_period: 15s
+    restart: unless-stopped
+
+  web:
+    build: { context: ., target: web }
+    image: vantage-web:local
+    environment:
+      APP_ENV: local
+      API_BASE_URL: http://api:4000
+      TRUST_FORWARDED_FOR: 'true'
+      DEMO_ACCOUNTS: ${DEMO_ACCOUNTS:-off}
+    ports:
+      - '127.0.0.1:${WEB_PORT:-3000}:3000'
+    depends_on:
+      api: { condition: service_healthy }
+    stop_grace_period: 10s
+    restart: unless-stopped
+
+volumes:
+  vantage_demo_pgdata:

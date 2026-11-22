@@ -1,0 +1,11 @@
+{
+  "name": "@vantage/migrate-runner",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Only the runtime dependencies of tools/migrate.mjs, so the one-shot migrate container (M10, D-110) installs exactly what it needs. No code.",
+  "dependencies": {
+    "node-pg-migrate": "9.0.0",
+    "pg": "8.23.1"
+  }
+}

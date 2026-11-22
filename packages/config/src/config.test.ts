@@ -374,3 +374,17 @@ describe('depth request allowance (M8b-2)', () => {
     }
   });
 });
+
+describe('LISTEN_HOST (M10, D-110)', () => {
+  it('defaults to 127.0.0.1 and accepts 0.0.0.0 and an IPv6 address (controls)', () => {
+    expect(loadConfig(buildTestEnv()).listenHost).toBe('127.0.0.1');
+    expect(loadConfig(buildTestEnv({ LISTEN_HOST: '0.0.0.0' })).listenHost).toBe('0.0.0.0');
+    expect(loadConfig(buildTestEnv({ LISTEN_HOST: '::1' })).listenHost).toBe('::1');
+  });
+  it('rejects a host name or garbage', () => {
+    for (const v of ['localhost', '999.1.1.1', '', 'http://x']) {
+      const e = fail(buildTestEnv({ LISTEN_HOST: v }));
+      expect(e.issues.map((i) => i.name)).toContain('LISTEN_HOST');
+    }
+  });
+});

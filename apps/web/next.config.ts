@@ -7,6 +7,8 @@ const secureTransport = config.appEnv === 'staging' || config.appEnv === 'produc
 
 const nextConfig: NextConfig = {
   poweredByHeader: false,
+  // VANTAGE never uses next/image: the optional sharp binary (LGPL libvips) is therefore never loaded and is not shipped (D-116)
+  images: { unoptimized: true },
   reactStrictMode: true,
   // D-65: the browser reaches the API only through the same-origin proxy route (src/app/api/[...path]/route.ts),
   // which reads API_BASE_URL at request time.

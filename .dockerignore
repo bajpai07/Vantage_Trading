@@ -1,0 +1,22 @@
+# Keeps secrets, caches and test output out of the build context and therefore out of every image layer (M10, D-110).
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+!.env.infra.example
+!.env.compose.example
+**/.env
+**/.env.*
+**/node_modules
+**/dist
+**/.next
+**/.turbo
+**/coverage
+**/test-results
+**/playwright-report
+**/*.tsbuildinfo
+demo-videos
+*.webm
+docs/phase-reports
+apps/web/e2e

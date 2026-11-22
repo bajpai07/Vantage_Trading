@@ -1,3 +1,4 @@
+import { isIP } from 'node:net';
 import { z } from 'zod';
 import { parseCidrList } from './cidr.js';
 import type { Cidr } from './cidr.js';
@@ -38,6 +39,8 @@ export interface Config {
   /** How often the simulated feed publishes quotes, in milliseconds. */
   readonly simTickMs: number;
   readonly port: number;
+  /** The address the API listens on: 127.0.0.1 by default (one machine); 0.0.0.0 inside a container (M10, D-110). */
+  readonly listenHost: string;
   /** The single origin allowed by CORS and the CSRF check, e.g. http://localhost:3000 */
   readonly webOrigin: string;
   readonly sessionIdleMinutes: number;
@@ -155,6 +158,9 @@ const intInRange = (lo: number, hi: number, what: string) =>
 
 const appSchema = z.object({
   PORT: intInRange(1, 65535, 'TCP port'),
+  LISTEN_HOST: z.string().refine((v) => isIP(v) !== 0, {
+    error: 'must be an IP address such as 127.0.0.1 (or 0.0.0.0 in a container)',
+  }),
   WEB_ORIGIN: z.string({ error: 'is required' }).refine(isOrigin, {
     error:
       'must be a single http(s) origin such as http://localhost:3000 (no path, no trailing slash)',
@@ -193,6 +199,7 @@ export function loadConfig(env: Env): Config {
 
   const app = appSchema.safeParse({
     PORT: env.PORT ?? '3000',
+    LISTEN_HOST: env.LISTEN_HOST ?? '127.0.0.1',
     WEB_ORIGIN: env.WEB_ORIGIN,
     SESSION_IDLE_MINUTES: env.SESSION_IDLE_MINUTES ?? '480',
     SESSION_ABSOLUTE_DAYS: env.SESSION_ABSOLUTE_DAYS ?? '7',
@@ -323,6 +330,7 @@ export function loadConfig(env: Env): Config {
     simSeed: app.data.SIM_SEED,
     simTickMs: app.data.SIM_TICK_MS,
     port: app.data.PORT,
+    listenHost: app.data.LISTEN_HOST,
     webOrigin: app.data.WEB_ORIGIN,
     sessionIdleMinutes: app.data.SESSION_IDLE_MINUTES,
     sessionAbsoluteDays: app.data.SESSION_ABSOLUTE_DAYS,

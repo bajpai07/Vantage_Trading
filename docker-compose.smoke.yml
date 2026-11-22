@@ -1,0 +1,6 @@
+# Used only by `pnpm compose:smoke` (M10, D-111): a temporary loopback mapping of Postgres so the smoke script can run the
+# ledger reconcile check against the compose database. It is never part of the normal stack.
+services:
+  postgres:
+    ports:
+      - '127.0.0.1:${SMOKE_DB_PORT:-56555}:5432'

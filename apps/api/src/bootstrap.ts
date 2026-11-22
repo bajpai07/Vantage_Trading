@@ -15,7 +15,11 @@ export async function startServer(): Promise<NestExpressApplication> {
   const logger = app.get<Logger>(LOGGER);
   configureApp(app, config, logger);
   app.enableShutdownHooks();
-  await app.listen(config.port, '127.0.0.1');
-  createLogger(config.logLevel).info('listening', { port: config.port });
+  const log = createLogger(config.logLevel);
+  // the signal is logged, then Nest closes the server and the database pool and the process exits 0 (docker stop sends SIGTERM)
+  for (const signal of ['SIGTERM', 'SIGINT'] as const)
+    process.once(signal, () => log.info('shutting down', { signal }));
+  await app.listen(config.port, config.listenHost);
+  log.info('listening', { host: config.listenHost, port: config.port });
   return app;
 }
