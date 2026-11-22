@@ -29,7 +29,7 @@ describe('docs/FACTS.md', () => {
 
 describe('no marketing language in the project documents', () => {
   const banned =
-    /\b(powerful|blazing|seamless|robust|cutting-edge|world-class|best-in-class|revolutionary|state-of-the-art|enterprise-grade|production-ready|battle-tested|game-chang\w+)\b/i;
+    /\b(powerful|blazing|seamless|robust|cutting-edge|world-class|best-in-class|revolutionary|state-of-the-art|enterprise-grade|production-ready|battle-tested|production-grade|real-time exchange|bank-level|game-chang\w+)\b/i;
   for (const f of [
     'README.md',
     'docs/FACTS.md',
