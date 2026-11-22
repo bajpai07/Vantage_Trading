@@ -40,6 +40,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
         </div>
       </header>
+      {me.email.endsWith('@demo.invalid') ? (
+        <p
+          data-testid="demo-notice"
+          className="border-b border-line bg-bg-2 px-4 py-1 text-center text-[12px] text-text-1"
+        >
+          You are using a temporary demo account. It cannot be recovered after you sign out.
+        </p>
+      ) : null}
       <main id="main" className="mx-auto w-full max-w-6xl flex-1 px-4 pb-20 pt-4 md:pb-6">
         {children}
       </main>

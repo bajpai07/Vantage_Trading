@@ -14,6 +14,14 @@ export default async function TerminalLayout({ children }: { children: React.Rea
   return (
     <>
       <BfcacheGuard />
+      {me.email.endsWith('@demo.invalid') ? (
+        <p
+          data-testid="demo-notice"
+          className="border-b border-line bg-bg-2 px-4 py-1 text-center text-[12px] text-text-1"
+        >
+          You are using a temporary demo account. It cannot be recovered after you sign out.
+        </p>
+      ) : null}
       <TerminalChrome
         initialPortfolio={portfolio.ok ? portfolio.data : null}
         pollMs={getWebConfig().portfolioPollMs}

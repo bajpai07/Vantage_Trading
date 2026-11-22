@@ -33,3 +33,14 @@ test('the banner says "Simulated 24/7 session" and a stock is tradable at a week
   expect(await counts(email)).toEqual({ orders: '1', executions: '1' });
   expect(await reconcile(email)).toEqual({ accounts: 1, violations: [] });
 });
+
+test('control: with DEMO_ACCOUNTS off there is no demo button on the login or the register page (M10, D-113)', async ({
+  page,
+}) => {
+  for (const path of ['/login', '/register']) {
+    await page.goto(path);
+    await expect(page.locator('form').first()).toBeVisible();
+    await expect(page.getByTestId('demo-button'), path).toHaveCount(0);
+    await expect(page.getByTestId('demo-section'), path).toHaveCount(0);
+  }
+});

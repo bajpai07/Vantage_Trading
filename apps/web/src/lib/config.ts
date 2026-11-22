@@ -22,6 +22,8 @@ export interface WebConfig {
   readonly quotePollMs: number;
   /** How often the orders lists refresh while the tab is visible (they also refresh after an order is placed or cancelled). */
   readonly ordersPollMs: number;
+  /** The "Try the demo" button on the login and register pages (M10, D-113). Off by default. */
+  readonly demoAccounts: boolean;
   /**
    * D-69: pass the X-Forwarded-For header Next provides on to the API (so the API can see the real client address when it
    * trusts this server). Set it only when this app runs behind a reverse proxy you control that appends the peer
@@ -79,6 +81,7 @@ const schema = z.object({
     .refine((n) => n >= 1000 && n <= 300_000, {
       error: 'must be a whole number of milliseconds from 1000 to 300000',
     }),
+  DEMO_ACCOUNTS: z.enum(['on', 'off'], { error: 'must be on or off' }),
   TRUST_FORWARDED_FOR: z.enum(['true', 'false'], { error: 'must be true or false' }),
 });
 
@@ -105,6 +108,7 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
     PORTFOLIO_POLL_MS: env.PORTFOLIO_POLL_MS ?? String(DEFAULT_POLL_MS),
     QUOTE_POLL_MS: env.QUOTE_POLL_MS ?? String(DEFAULT_QUOTE_POLL_MS),
     ORDERS_POLL_MS: env.ORDERS_POLL_MS ?? String(DEFAULT_ORDERS_POLL_MS),
+    DEMO_ACCOUNTS: env.DEMO_ACCOUNTS ?? 'off',
     TRUST_FORWARDED_FOR: env.TRUST_FORWARDED_FOR ?? 'true',
   });
   if (!parsed.success) {
@@ -119,6 +123,7 @@ export function loadWebConfig(env: Readonly<Record<string, string | undefined>>)
     portfolioPollMs: parsed.data.PORTFOLIO_POLL_MS,
     quotePollMs: parsed.data.QUOTE_POLL_MS,
     ordersPollMs: parsed.data.ORDERS_POLL_MS,
+    demoAccounts: parsed.data.DEMO_ACCOUNTS === 'on',
     trustForwardedFor: parsed.data.TRUST_FORWARDED_FOR === 'true',
   };
 }

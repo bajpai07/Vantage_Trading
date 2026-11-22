@@ -26,7 +26,8 @@
     "bench:search": "tsx tools/bench-search.ts",
     "bench:orders": "node --conditions=source --import tsx tools/bench-orders.ts",
     "bench:orders:http": "node tools/bench-orders-http.mjs",
-    "bench:portfolio": "node tools/bench-portfolio.mjs"
+    "bench:portfolio": "node tools/bench-portfolio.mjs",
+    "demo:seed": "node tools/demo-seed.mjs"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

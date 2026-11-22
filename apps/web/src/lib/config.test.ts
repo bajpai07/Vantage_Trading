@@ -26,6 +26,7 @@ describe('loadWebConfig', () => {
       portfolioPollMs: DEFAULT_POLL_MS,
       quotePollMs: DEFAULT_QUOTE_POLL_MS,
       ordersPollMs: DEFAULT_ORDERS_POLL_MS,
+      demoAccounts: false,
       trustForwardedFor: true,
     });
     expect(DEFAULT_POLL_MS).toBe(15_000);
@@ -47,6 +48,7 @@ describe('loadWebConfig', () => {
       portfolioPollMs: 2000,
       quotePollMs: 1500,
       ordersPollMs: 3000,
+      demoAccounts: false,
       trustForwardedFor: true,
     });
   });
@@ -56,6 +58,15 @@ describe('loadWebConfig', () => {
     expect(loadWebConfig({ ORDERS_POLL_MS: '300000' }).ordersPollMs).toBe(300_000);
     for (const v of ['999', '300001', 'often', '10.5', '']) {
       expect(fail({ ORDERS_POLL_MS: v }).issues.map((i) => i.name)).toContain('ORDERS_POLL_MS');
+    }
+  });
+
+  it('DEMO_ACCOUNTS is off unless it is exactly "on" (M10, D-113; controls: on loads, junk is refused)', () => {
+    expect(loadWebConfig({}).demoAccounts).toBe(false);
+    expect(loadWebConfig({ DEMO_ACCOUNTS: 'off' }).demoAccounts).toBe(false);
+    expect(loadWebConfig({ DEMO_ACCOUNTS: 'on' }).demoAccounts).toBe(true);
+    for (const v of ['true', 'ON', '1', '']) {
+      expect(fail({ DEMO_ACCOUNTS: v }).issues.map((i) => i.name)).toContain('DEMO_ACCOUNTS');
     }
   });
 

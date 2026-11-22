@@ -2,6 +2,8 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 import { COUNTRY_CODES } from '@vantage/contracts';
 import { RegisterForm } from '../../../components/auth-forms';
+import { DemoButton } from '../../../components/demo-button';
+import { getWebConfig } from '../../../lib/config';
 
 export const metadata: Metadata = { title: 'Create account' };
 
@@ -26,6 +28,7 @@ export default function RegisterPage() {
       <p className="mt-4 text-center text-[13px] text-text-2">
         Already have an account? <Link href="/login">Sign in</Link>
       </p>
+      <DemoButton enabled={getWebConfig().demoAccounts} />
     </>
   );
 }

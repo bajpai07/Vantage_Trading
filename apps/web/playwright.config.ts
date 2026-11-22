@@ -61,6 +61,8 @@ export default defineConfig({
       APP_ENV: 'test',
       PORTFOLIO_POLL_MS: String(POLL_MS),
       QUOTE_POLL_MS: '1000',
+      // the default profile shows the "Try the demo" button, the always-open profile does not (M10, D-113)
+      DEMO_ACCOUNTS: ALT ? 'off' : 'on',
       ORDERS_POLL_MS: '3000', // production default 10 s; tests look for matcher fills quickly
       TRUST_FORWARDED_FOR: 'true',
     },

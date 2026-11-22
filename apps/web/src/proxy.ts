@@ -11,7 +11,7 @@ import { getWebConfig } from './lib/config';
 const SESSION_COOKIE = 'vantage_session';
 const AUTH_PAGES = new Set(['/login', '/register']);
 /** Pages anyone may read, signed in or not (the licence notices of the chart library, D-103). */
-const PUBLIC_PAGES = new Set(['/third-party-notices']);
+const PUBLIC_PAGES = new Set(['/third-party-notices', '/about']);
 
 async function hasValidSession(request: NextRequest): Promise<boolean> {
   const token = request.cookies.get(SESSION_COOKIE)?.value;

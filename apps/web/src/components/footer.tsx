@@ -19,6 +19,9 @@ export function Footer({ feed }: { feed?: FeedInfoResponse | null }) {
           This is a demo: prices are simulated and nothing here is real.
         </span>
       ) : null}{' '}
+      <Link href="/about" data-testid="about-link" className="underline underline-offset-2">
+        About
+      </Link>{' '}
       <Link
         href="/third-party-notices"
         data-testid="notices-link"

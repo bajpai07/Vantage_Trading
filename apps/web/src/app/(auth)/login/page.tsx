@@ -1,6 +1,8 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 import { LoginForm } from '../../../components/auth-forms';
+import { DemoButton } from '../../../components/demo-button';
+import { getWebConfig } from '../../../lib/config';
 import { safeReturnTo } from '../../../lib/return-to';
 
 export const metadata: Metadata = { title: 'Sign in' };
@@ -27,6 +29,7 @@ export default async function LoginPage({
       <p className="mt-4 text-center text-[13px] text-text-2">
         New here? <Link href="/register">Create an account</Link>
       </p>
+      <DemoButton enabled={getWebConfig().demoAccounts} />
     </>
   );
 }
