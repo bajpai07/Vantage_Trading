@@ -70,11 +70,18 @@ async function main() {
   // wait until the web app answers and the API behind it is healthy
   let ok = false;
   for (let i = 0; i < 90 && !ok; i += 1) {
+    // Observed in M10 T7: right after `compose up` the first request to the published port can stay pending forever with nothing
+    // else keeping the event loop alive, and Node then exits with code 13 ("unsettled top-level await") without running the teardown.
+    // A per-attempt abort timer (a normal, referenced timer) keeps the loop alive and turns the hang into a retry.
+    const ctl = new AbortController();
+    const guard = setTimeout(() => ctl.abort(), 5000);
     try {
-      const r = await fetch(`${base}/api/v1/market/feed`);
+      const r = await fetch(`${base}/api/v1/market/feed`, { signal: ctl.signal });
       ok = r.status === 200;
     } catch {
-      /* not up yet */
+      /* not up yet, or the attempt hung and was aborted */
+    } finally {
+      clearTimeout(guard);
     }
     if (!ok) await sleep(2000);
   }
