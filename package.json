@@ -27,7 +27,8 @@
     "bench:orders": "node --conditions=source --import tsx tools/bench-orders.ts",
     "bench:orders:http": "node tools/bench-orders-http.mjs",
     "bench:portfolio": "node tools/bench-portfolio.mjs",
-    "demo:seed": "node tools/demo-seed.mjs"
+    "demo:seed": "node tools/demo-seed.mjs",
+    "demo:record": "pnpm --filter web exec playwright test -c demo/playwright.demo.config.ts"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",
