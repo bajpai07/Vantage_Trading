@@ -50,7 +50,7 @@ If you regenerate the secrets with `pnpm compose:setup --force`, run `down -v` f
 
 ## Smoke test
 
-`pnpm compose:smoke` builds and starts the stack under its **own project name** (`vantage-smoke`, web port 3555, a temporary loopback mapping of Postgres on 56555 for this run only), registers a user over HTTP, places a market order and a resting limit order, reads the portfolio, checks the equity identity from the response strings, runs the ledger reconcile check (invariants I1 to I10) against the compose database, and always tears everything down (`down -v`). It exits 0 on success and 1 otherwise, and never touches your normal dev database or any other container. Change the ports with `SMOKE_WEB_PORT` and `SMOKE_DB_PORT` if they clash.
+`pnpm compose:smoke` builds and starts the stack under its **own project name** (`vantage-smoke`, web port 3555, a temporary loopback mapping of Postgres on 56555 for this run only), registers a user over HTTP, places a market order and a resting limit order, reads the portfolio, checks the equity identity from the response strings, runs the ledger reconcile check (invariants I1 to I7 and I10) against the compose database, and always tears everything down (`down -v`). It exits 0 on success and 1 otherwise, and never touches your normal dev database or any other container. Change the ports with `SMOKE_WEB_PORT` and `SMOKE_DB_PORT` if they clash.
 
 ## Troubleshooting
 

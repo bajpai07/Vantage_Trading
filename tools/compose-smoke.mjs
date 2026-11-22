@@ -212,7 +212,7 @@ async function main() {
     throw new Error('reservedUsd differs from the order reserve');
   log('equity identity: cash + reserved + costBasis + fees - realised = initial capital (exact)');
 
-  // the ledger reconcile check (invariants I1-I10) against the compose database, through the temporary loopback mapping
+  // the ledger reconcile check (invariants I1 to I7 and I10) against the compose database, through the temporary loopback mapping
   const { default: pg } = await import('pg');
   const { reconcileAccount } = await import(
     pathToFileURL(resolve(root, 'apps/api/dist/modules/ledger/reconcile.js')).href
@@ -227,7 +227,7 @@ async function main() {
       [email],
     );
     const violations = await reconcileAccount(pool, acct.rows[0].id);
-    log(`reconcile (I1-I10, zero tolerance): ${String(violations.length)} violations`);
+    log(`reconcile (I1-I7 and I10, zero tolerance): ${String(violations.length)} violations`);
     if (violations.length > 0)
       throw new Error(`reconcile found violations: ${JSON.stringify(violations).slice(0, 300)}`);
   } finally {
