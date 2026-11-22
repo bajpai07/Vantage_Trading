@@ -1,0 +1,21 @@
+sequenceDiagram
+  autonumber
+  participant C as Cancel (HTTP)
+  participant F as Fill (matcher or market path)
+  participant DB as Postgres rows
+  Note over C,F: every path takes the locks in the same order:<br/>account row, CASH row, order row, position, lots oldest first
+  par cancel and fill start together
+    C->>DB: lock the account row
+  and
+    F->>DB: lock the account row
+  end
+  Note over DB: whoever gets the account lock first wins
+  C->>DB: re-check the order status inside the lock
+  alt cancel wins
+    C->>DB: ACCEPTED to CANCELLED, release the reservation
+    F->>DB: lock acquired later, sees a terminal order, skips
+  else fill wins
+    F->>DB: ACCEPTED to FILLED, post the fill legs
+    C->>DB: lock acquired later, sees FILLED, answers ORDER_NOT_OPEN
+  end
+  Note over C,F: tested over 1,000 iterations: never both, never neither

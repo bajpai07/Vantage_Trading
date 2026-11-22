@@ -1,0 +1,17 @@
+flowchart TB
+  subgraph Accounts["Ledger accounts of one trading account (USD)"]
+    CAPITAL["CAPITAL<br/>source of virtual money, credit"]
+    CASH["CASH<br/>free cash, never below 0"]
+    RESERVED["RESERVED<br/>cash held for open BUY orders"]
+    POS["POSITION_COST<br/>cost of open lots"]
+    FEES["FEES<br/>fees paid"]
+    PNL["REALIZED_PNL<br/>credit when profitable"]
+  end
+  G["GRANT: CASH +10000.00000000, CAPITAL -10000.00000000"]
+  B["Vector A, BUY 10 AAPL at 190.04: CASH -1900.40000000, POSITION_COST +1900.40000000"]
+  R["Cash after the fill: 8099.60"]
+  CAPITAL --> G --> CASH
+  CASH --> B --> POS
+  B --> R
+  Rule["Every transaction sums to zero.<br/>Entries are never updated or deleted."]
+  Accounts --- Rule

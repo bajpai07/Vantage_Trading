@@ -1,0 +1,17 @@
+flowchart LR
+  Browser["Browser<br/>(Next.js pages, no arithmetic on money)"]
+  subgraph Web["web: Next.js 16, port 3000"]
+    Proxy["same-origin proxy /api/*<br/>CSP with nonce, session check"]
+  end
+  subgraph API["api: NestJS, not published"]
+    Orders["orders, ledger, portfolio, auth"]
+    Matcher["matcher worker<br/>(advisory lock, one tick at a time)"]
+    Feed["SIM feed<br/>(seeded, deterministic, labelled SIM)"]
+  end
+  DB[("PostgreSQL 16<br/>append-only ledger, DB-enforced invariants")]
+  Browser -->|"HTTPS, cookie"| Proxy
+  Proxy -->|"forwards /api/*"| Orders
+  Orders --> DB
+  Matcher --> DB
+  Feed -->|"validated quotes"| Orders
+  Feed -->|"validated quotes"| Matcher

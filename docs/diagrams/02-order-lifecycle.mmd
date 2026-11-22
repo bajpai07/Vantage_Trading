@@ -1,0 +1,12 @@
+stateDiagram-v2
+  [*] --> NEW
+  NEW --> REJECTED: validation or buying power fails
+  NEW --> FILLED: MARKET, accepted and filled in one transaction
+  NEW --> ACCEPTED: LIMIT, cash or shares reserved
+  ACCEPTED --> FILLED: marketable now, or the matcher fills it
+  ACCEPTED --> CANCELLED: cancel, the reservation is released
+  ACCEPTED --> EXPIRED: DAY or GTC time runs out, released
+  FILLED --> [*]
+  REJECTED --> [*]
+  CANCELLED --> [*]
+  EXPIRED --> [*]

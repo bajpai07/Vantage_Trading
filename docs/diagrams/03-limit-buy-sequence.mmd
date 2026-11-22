@@ -1,0 +1,17 @@
+sequenceDiagram
+  autonumber
+  participant U as User
+  participant A as API (orders)
+  participant L as Ledger (Postgres)
+  participant M as Matcher
+  U->>A: POST /v1/orders LIMIT BUY 0.0025 BTC-USD at 89,900.00 (Idempotency-Key)
+  A->>L: ORDER_RESERVE: CASH -224.97475, RESERVED +224.97475
+  Note over L: cash 9,775.02525 (equity unchanged)
+  A-->>U: 201 ACCEPTED, reservedUsd 224.97475
+  Note over M: quote 89,830.00 / 89,850.00, the ask slips to 89,894.93
+  M->>A: fill at 89,894.93 (below the limit)
+  A->>L: RESERVED -224.97475
+  A->>L: POSITION_COST +224.737325
+  A->>L: FEES +0.22473732
+  A->>L: CASH +0.01268768
+  Note over L: the four legs sum to 0, cash 9,775.03793768
